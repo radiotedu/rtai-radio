@@ -1,0 +1,24 @@
+[Unit]
+Description=RadioTEDU French independent fallback source
+After=network-online.target icecast2.service
+Wants=network-online.target
+Requires=icecast2.service
+
+[Service]
+Type=simple
+User=radiotedu
+Group=radiotedu
+Environment=RADIOTEDU_STATION=fr
+EnvironmentFile=/etc/radiotedu/fallback-fr.env
+ExecStart=/usr/bin/liquidsoap /opt/radiotedu-streaming/liquidsoap/fallback.liq
+Restart=always
+RestartSec=2
+StartLimitIntervalSec=600
+StartLimitBurst=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/radiotedu/fallback/fr
+
+[Install]
+WantedBy=multi-user.target
