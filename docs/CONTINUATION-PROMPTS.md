@@ -43,3 +43,21 @@ docs/CONTINUATION-PROMPTS.md and docs/superpowers/plans/2026-07-11-radiotedu-ter
 Open the RadioTEDU repository on branch feature/dual-station-radiotedu. Read
 docs/CONTINUATION-PROMPTS.md and the Terra execution pack. Implement the remaining signed public-sync and /ai website work (T31 onward) before deploying radiotedu.com/ai. The website must be public-state-only and must never control or block broadcasting.
 ```
+
+## Post-install web-server handoff
+
+After a successful broadcast-computer installation, the installer/operator
+output must show the following prompt for the web-server computer:
+
+```text
+Open the RadioTEDU repository on branch feature/dual-station-radiotedu. Read
+docs/CONTINUATION-PROMPTS.md. Configure the signed outbound-only Public Sync
+connection from the broadcasting computer, then implement/deploy the public
+RadioTEDU Broadcast Wall and /ai pages. Synchronize only sanitized now-playing,
+recent-song, program-clock, schedule, station-health, and listener-safe
+metadata. Do not expose local paths, secrets, prompts, incidents, model data,
+or logs. The web server must never send playout-control commands or block music.
+```
+
+The broadcast computer owns songs, program execution, and playout. The web
+server receives signed read-only state and presents it to listeners.
