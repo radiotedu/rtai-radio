@@ -29,6 +29,14 @@ Open the RadioTEDU repository on branch feature/dual-station-radiotedu. Read
 docs/CONTINUATION-PROMPTS.md and docs/superpowers/plans/2026-07-11-radiotedu-terra-execution-pack.md. Resume at T27, preserve EN/FR isolation and Qwen-only speech, then finish service packaging and install only after the focused tests pass. Do not claim production qualification until the documented soak/canary gates are complete.
 ```
 
+## Stream mounts
+
+- English uses the fixed Icecast mount `/spark`.
+- French must try these mounts in order and persist the first usable one:
+  `/event`, `/etkinlik`, `/ai`, then `/experimental`.
+- Never place both stations on the same mount. The mount-probe/fallback choice
+  must not block local music playout.
+
 ## Short web-server prompt
 
 ```text
