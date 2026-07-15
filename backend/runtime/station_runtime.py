@@ -36,7 +36,13 @@ class StationRuntime:
     _started: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        for component in (self.agent, self.orchestrator):
+        components = (
+            self.agent,
+            self.orchestrator,
+            getattr(self.agent, "rundown_planner", None),
+            getattr(self.agent, "fallback_playlist", None),
+        )
+        for component in (item for item in components if item is not None):
             component_context = getattr(component, "context", self.context)
             if not _same_station_context(component_context, self.context):
                 raise ValueError("station runtime components must share one station context")

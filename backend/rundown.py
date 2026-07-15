@@ -14,6 +14,7 @@ from .stations.context import StationContext, coerce_station_context
 
 ACTIVE_STATES = ("planned", "researching", "rendering", "ready", "queued", "playing")
 RENDERED_STATES = ("ready", "queued", "playing")
+MIN_MUSIC_TRACK_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,13 +84,15 @@ class RundownPlanner:
         runtime: Settings | StationContext,
         policy: CoveragePolicy | None = None,
         fallback_seconds_provider: Callable[[], int] | None = None,
+        initialize_database: bool = True,
     ) -> None:
         self.context = coerce_station_context(runtime)
         self.settings = self.context.settings
         self._database_runtime: Settings | StationContext = (
             self.context if isinstance(runtime, StationContext) else self.settings
         )
-        init_db(self._database_runtime)
+        if initialize_database:
+            init_db(self._database_runtime)
         self.policy = policy or CoveragePolicy.from_settings(self.settings)
         self._fallback_seconds_provider = fallback_seconds_provider or (lambda: 0)
 
@@ -227,9 +230,10 @@ class RundownPlanner:
                 """
                 select id, title, artist, genre, mood, duration_seconds, file_path
                 from tracks
-                where duration_seconds is not null and duration_seconds > 0
+                where duration_seconds is not null and duration_seconds >= ?
                 order by coalesce(last_played_at, ''), play_count, id
-                """
+                """,
+                (MIN_MUSIC_TRACK_SECONDS,),
             ).fetchall()
             tracks = [dict(row) for row in rows if Path(row["file_path"]).expanduser().is_file()]
             if not tracks:
@@ -245,19 +249,43 @@ class RundownPlanner:
                 f"select count(*) from rundown_items where state in ({','.join('?' for _ in ACTIVE_STATES)})",
                 ACTIVE_STATES,
             ).fetchone()[0]
-            cursor = max(now, _parse_time(latest) if latest else now)
-            coverage = self.coverage(now).planned_seconds
-            rendered = self.coverage(now).rendered_seconds
-            index = int(active_count) % len(tracks)
-            timestamp = now_iso()
-            while coverage < target_seconds:
-                track = tracks[index % len(tracks)]
-                duration = float(track["duration_seconds"])
-                planned_end = cursor + timedelta(seconds=duration)
-                state = "ready" if rendered < self.policy.rendered_seconds else "planned"
-                local_start = cursor.astimezone(ZoneInfo(self.context.profile.timezone))
-                program = current_program(self._database_runtime, local_start)
-                rendered_path = track["file_path"] if state == "ready" else None
+        cursor = max(now, _parse_time(latest) if latest else now)
+        coverage_status = self.coverage(now)
+        coverage = coverage_status.planned_seconds
+        rendered = coverage_status.rendered_seconds
+        index = int(active_count) % len(tracks)
+        timestamp = now_iso()
+        planned_rows: list[tuple] = []
+        while coverage <= target_seconds:
+            track = tracks[index % len(tracks)]
+            duration = float(track["duration_seconds"])
+            planned_end = cursor + timedelta(seconds=duration)
+            state = "ready" if rendered <= self.policy.rendered_seconds else "planned"
+            local_start = cursor.astimezone(ZoneInfo(self.context.profile.timezone))
+            program = current_program(self._database_runtime, local_start)
+            rendered_path = track["file_path"] if state == "ready" else None
+            planned_rows.append(
+                (
+                    self.context.profile.station_id,
+                    cursor.isoformat(),
+                    planned_end.isoformat(),
+                    duration,
+                    track["id"],
+                    program["id"],
+                    state,
+                    track["file_path"],
+                    rendered_path,
+                    timestamp,
+                    timestamp,
+                )
+            )
+            coverage += int(round(duration))
+            if state == "ready":
+                rendered += int(round(duration))
+            cursor = planned_end
+            index += 1
+        with connect(self._database_runtime) as conn:
+            for planned_row in planned_rows:
                 conn.execute(
                     """
                     insert into rundown_items (
@@ -266,25 +294,8 @@ class RundownPlanner:
                         attempts, metadata_json, created_at, updated_at
                     ) values (?, ?, ?, ?, 'music_track', ?, ?, ?, ?, ?, 0, '{}', ?, ?)
                     """,
-                    (
-                        self.context.profile.station_id,
-                        cursor.isoformat(),
-                        planned_end.isoformat(),
-                        duration,
-                        track["id"],
-                        program["id"],
-                        state,
-                        track["file_path"],
-                        rendered_path,
-                        timestamp,
-                        timestamp,
-                    ),
+                    planned_row,
                 )
-                coverage += int(round(duration))
-                if state == "ready":
-                    rendered += int(round(duration))
-                cursor = planned_end
-                index += 1
             conn.commit()
 
 
@@ -319,4 +330,3 @@ def _item_from_row(row) -> RundownItem:
         attempts=int(row["attempts"]),
         error_code=row["error_code"],
     )
-

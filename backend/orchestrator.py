@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -177,21 +178,21 @@ class AutonomousOrchestrator:
             conn.commit()
 
         strategy_updated = self._maybe_update_strategy(track_count)
-        prebuffer = self.agent.ensure_announcement_prebuffer(max_to_prepare=1)
+        coverage = self.agent.maintain_rundown(max_render_items=1)
+        prebuffer = self.agent.announcement_readiness()
         with connect(self._database_runtime) as conn:
             self._evaluate_prebuffer_health(conn, prebuffer)
             recovery = self._recovery_snapshot(conn)
             conn.commit()
         played = False
         if not self.agent.playback.queue and self.agent.playback.now_playing is None:
-            result = self.agent.queue_next_track()
+            result = self.agent.queue_next_ready_rundown_item()
             played = bool(result.get("started"))
-            if played:
-                prebuffer = self.agent.ensure_announcement_prebuffer()
         return {
             "played": played,
             "strategy_updated": strategy_updated,
             "prebuffer": prebuffer,
+            "coverage": asdict(coverage),
             "recovery": recovery,
             "executed_task": executed_task,
         }
@@ -250,7 +251,7 @@ class AutonomousOrchestrator:
                 )
                 conn.commit()
             readiness = self.agent.ensure_announcement_prebuffer()
-            if not readiness.get("ready_to_broadcast"):
+            if int(readiness.get("ready") or 0) < int(readiness.get("required") or 0):
                 raise RuntimeError("announcement prebuffer is still not ready")
             return readiness
         if task_type == "restart_llm_runtime":

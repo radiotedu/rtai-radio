@@ -19,6 +19,7 @@ from backend.ollama_setup import check_ollama_setup, repair_ollama_runtime
 from backend.orchestrator import AutonomousOrchestrator
 from backend.playback import PlaybackController, QueueItem
 from backend.radio_agent import RadioAgent
+from backend.rundown import CoverageStatus
 from backend.search.base import SearchResult
 from backend.stations.context import coerce_station_context
 from backend.tts.contracts import QwenUnavailableError
@@ -356,7 +357,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             result = agent.ensure_announcement_prebuffer("night_lab")
             self.assertGreaterEqual(result["ready"], 5)
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
 
     def test_prebuffer_readiness_reports_age_failures_and_next_type(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -410,7 +412,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             self.assertEqual(4, readiness["ready"])
             self.assertEqual(4, readiness["target"])
 
@@ -437,7 +440,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             self.assertFalse(result["played"])
             self.assertIn("prebuffer", result)
-            self.assertTrue(result["prebuffer"]["ready_to_broadcast"])
+            self.assertFalse(result["prebuffer"]["ready_to_broadcast"])
+            self.assertFalse(result["prebuffer"]["air_ready"])
             self.assertEqual(1, len(agent.playback.queue))
             with connect(settings) as conn:
                 ready = conn.execute("select count(*) from announcement_queue where status='ready'").fetchone()[0]
@@ -457,9 +461,9 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             class CountingAgent(RadioAgent):
                 calls = []
 
-                def ensure_announcement_prebuffer(self, program_id=None, max_to_prepare=None):
-                    self.calls.append(max_to_prepare)
-                    return {"ready": 5, "used": 0, "failed": 0, "required": 5, "ready_to_broadcast": True}
+                def maintain_rundown(self, max_render_items=1):
+                    self.calls.append(max_render_items)
+                    return CoverageStatus(0, 0, 0, True, False)
 
             agent = CountingAgent(settings)
             agent.playback.add(QueueItem("tts", "Already queued", str(root / "queued.wav")))
@@ -743,7 +747,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             result = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
             with connect(settings) as conn:
                 rows = conn.execute(
                     """
@@ -795,7 +800,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
                 conn.commit()
             result = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute(
                     "select text, metadata_json from announcement_queue where status='ready' and program_id='night_lab'"
@@ -836,7 +842,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             result = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
             with connect(settings) as conn:
                 legacy = conn.execute("select status from announcement_queue where text like 'legacy generic%' order by id").fetchall()
                 ready = conn.execute(
@@ -883,7 +890,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             agent = RacingAgent(settings)
             result = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
             with connect(settings) as conn:
                 ready = conn.execute(
                     "select metadata_json from announcement_queue where status='ready' and program_id='night_lab' order by id"
@@ -929,7 +937,8 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
 
             result = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(result["ready_to_broadcast"])
+            self.assertFalse(result["ready_to_broadcast"])
+            self.assertFalse(result["air_ready"])
             with connect(settings) as conn:
                 duplicates = conn.execute("select status from announcement_queue where text like 'duplicate alice%' order by id").fetchall()
                 ready = conn.execute(
@@ -1054,7 +1063,7 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
                     "silence_threshold_dbfs": -60.0,
                     "degraded_primary_seconds": 1.0,
                     "fallback_seconds": 1.5,
-                    "talk_over_minimum_intro_confidence": 0.85,
+                    "talk_over_minimum_intro_confidence": 0.65,
                     "talk_over_minimum_instrumental_intro_seconds": 3.0,
                     "speech_end_before_intro_seconds": 0.5,
                     "speech_end_before_intro_range_seconds": (0.3, 0.7),

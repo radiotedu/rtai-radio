@@ -92,7 +92,7 @@ def test_planner_builds_four_hours_and_refills_below_two(tmp_path: Path):
         rows = conn.execute(
             "select id from rundown_items where state in ('planned', 'ready') order by planned_start"
         ).fetchall()
-        for row in rows[:5]:
+        for row in rows[:6]:
             conn.execute(
                 "update rundown_items set state='completed', actual_end=?, updated_at=? where id=?",
                 (NOW.isoformat(), NOW.isoformat(), row["id"]),
@@ -121,6 +121,16 @@ def test_claim_next_ready_is_transactional_and_does_not_repeat(tmp_path: Path):
     assert second.state == "queued"
 
 
+def test_micro_clips_are_not_planned_as_music_tracks(tmp_path: Path):
+    planner = seeded_planner(tmp_path, track_durations=[0.1])
+
+    status = planner.maintain(NOW)
+
+    assert status.planned_seconds == 0
+    with connect(planner.database_runtime) as conn:
+        assert conn.execute("select count(*) from rundown_items").fetchone()[0] == 0
+
+
 def test_every_week_hour_has_a_named_or_overnight_program(tmp_path: Path):
     settings = seeded_settings(tmp_path)
     assert current_program(settings, MONDAY)["id"] == "overnight_signal"
@@ -133,4 +143,3 @@ def test_every_week_hour_has_a_named_or_overnight_program(tmp_path: Path):
             )
             assert program["id"]
             assert program["name"]
-

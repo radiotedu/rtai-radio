@@ -8,13 +8,17 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from uuid import uuid4
 
+from .audio.segue_policy import CueMetadata, CueSource, Genre, MediaKind, SegueItem, SegueKind, SeguePolicy
+from .audio.talkover_renderer import TalkOverRenderer
 from .config import Settings
 from .announcements.models import AnnouncementJob
 from .database import connect, init_db, log_event, now_iso, rows_to_dicts
 from .editorial import build_pop_liner, research_allowed
 from .editorial_research import EditorialResearchService, FactCard
+from .fallback_playlist import FallbackPlaylistBuilder
 from .llm import choose_track_with_llm, ollama_runtime_status
 from .playback import PlaybackController, QueueItem
+from .rundown import CoverageStatus, RundownPlanner
 from .scheduler import current_program
 from .search.rss import RSSSearchProvider
 from .search.searxng import SearXNGSearchProvider
@@ -34,6 +38,14 @@ class RadioAgent:
         )
         init_db(self._database_runtime)
         self.playback = PlaybackController(self.settings)
+        self.fallback_playlist = FallbackPlaylistBuilder(self._database_runtime)
+        self.rundown_planner = RundownPlanner(
+            self._database_runtime,
+            fallback_seconds_provider=lambda: self.fallback_playlist.status().coverage_seconds,
+            initialize_database=False,
+        )
+        self.segue_policy = SeguePolicy()
+        self.talkover_renderer = TalkOverRenderer()
         self.tts = build_tts_provider(self.context)
         research_provider = (
             SearXNGSearchProvider(self.settings.searxng_url)
@@ -64,7 +76,18 @@ class RadioAgent:
                 return {"started": False, "reason": "no_music"}
             conn.execute("update channels set status='live', updated_at=? where id='radiotedu'", (now_iso(),))
             conn.commit()
-        return self.queue_next_track()
+        coverage = self.maintain_rundown(max_render_items=0)
+        result = self.queue_next_ready_rundown_item()
+        return {
+            **result,
+            "coverage": {
+                "planned_seconds": coverage.planned_seconds,
+                "rendered_seconds": coverage.rendered_seconds,
+                "fallback_seconds": coverage.fallback_seconds,
+                "needs_refill": coverage.needs_refill,
+                "air_ready": coverage.air_ready,
+            },
+        }
 
     def stop(self) -> dict:
         self.playback.running = False
@@ -174,7 +197,7 @@ class RadioAgent:
 
     def queue_next_track(self) -> dict:
         program = current_program(self._database_runtime)
-        prebuffer = self.announcement_readiness(program["id"])
+        prebuffer = self._announcement_queue_readiness(program["id"])
         if not prebuffer["ready_to_broadcast"]:
             with connect(self._database_runtime) as conn:
                 log_event(conn, "info", "Waiting for announcement prebuffer before broadcast.", prebuffer)
@@ -234,7 +257,220 @@ class RadioAgent:
         dj_line = announcement["text"] if announcement else choice.dj_line if choice else self._line_for_track(selected)
         return {"started": True, "track_id": int(selected["id"]), "dj_line": dj_line}
 
+    def maintain_rundown(self, max_render_items: int = 1) -> CoverageStatus:
+        """Maintain station-local music coverage while bounding optional speech work."""
+
+        render_limit = max(0, int(max_render_items))
+        fallback = self.fallback_playlist.status()
+        if not fallback.air_ready:
+            try:
+                self.fallback_playlist.rebuild()
+            except OSError as exc:
+                with connect(self._database_runtime) as conn:
+                    log_event(
+                        conn,
+                        "warning",
+                        "Fallback playlist rebuild failed; rundown music remains available.",
+                        {"failure_code": type(exc).__name__},
+                    )
+                    conn.commit()
+        now = datetime.now(timezone.utc)
+        coverage = self.rundown_planner.maintain(now)
+        if render_limit:
+            try:
+                self._ensure_announcement_prebuffer_legacy(max_to_prepare=render_limit)
+            except Exception as exc:
+                with connect(self._database_runtime) as conn:
+                    log_event(
+                        conn,
+                        "warning",
+                        "Optional announcement rendering failed; music coverage remains available.",
+                        {"failure_code": type(exc).__name__},
+                    )
+                    conn.commit()
+        return self.rundown_planner.coverage(now)
+
+    def queue_next_ready_rundown_item(self) -> dict:
+        """Claim and play one durable item without making live search or LLM calls."""
+
+        claimed_at = datetime.now(timezone.utc)
+        item = self.rundown_planner.claim_next_ready(claimed_at)
+        if item is None:
+            return {"started": False, "reason": "no_ready_rundown_item"}
+        with connect(self._database_runtime) as conn:
+            row = conn.execute(
+                "select id, title, artist, genre, duration_seconds, file_path from tracks where id=?",
+                (item.track_id,),
+            ).fetchone()
+        if row is None or not Path(str(row["file_path"])).expanduser().is_file():
+            self.rundown_planner.mark_failed(item.id, "missing_track")
+            return {"started": False, "reason": "missing_track", "rundown_item_id": item.id}
+
+        track = dict(row)
+        track_item = QueueItem(
+            "track",
+            track["title"],
+            track["file_path"],
+            duration_seconds=float(track["duration_seconds"] or item.measured_duration_seconds),
+            artist=track.get("artist"),
+            track_id=int(track["id"]),
+        )
+        announcement = self._consume_ready_announcement(item.program_id) if item.program_id else None
+        speech_item: QueueItem | None = None
+        decision = None
+        transition = "none"
+        editorial_mode = "music_only"
+        queued_count = 1
+
+        if announcement is not None:
+            try:
+                speech_item = QueueItem(
+                    "tts",
+                    "Radio TED U DJ",
+                    announcement["file_path"],
+                    duration_seconds=self._speech_duration_seconds(announcement["file_path"]),
+                )
+                try:
+                    genre = Genre(str(track.get("genre") or "other").casefold())
+                except ValueError:
+                    genre = Genre.OTHER
+                decision = self.segue_policy.choose(
+                    None,
+                    SegueItem(MediaKind.SPEECH, float(speech_item.duration_seconds or 0.0)),
+                    SegueItem(
+                        MediaKind.MUSIC,
+                        float(track_item.duration_seconds or 0.0),
+                        genre=genre,
+                        cue=CueMetadata(cue_source=CueSource.DEFAULT),
+                    ),
+                )
+                if decision.kind is SegueKind.TALK_OVER:
+                    rendered = self.settings.tts_path / "talkovers" / f"rundown_{item.id}.wav"
+                    mixed = self.playback.queue_talkover(
+                        speech_item,
+                        track_item,
+                        output_path=rendered,
+                        decision=decision,
+                        renderer=self.talkover_renderer,
+                    )
+                    transition = "talk_over" if mixed else "sequential"
+                    queued_count = 1 if mixed else 2
+                else:
+                    self.playback.add(speech_item)
+                    self.playback.add(track_item)
+                    transition = "sequential"
+                    queued_count = 2
+                editorial_mode = "prepared_announcement"
+                self._record_rundown_transition(item.id, decision, transition)
+            except (OSError, RuntimeError, ValueError) as exc:
+                self.playback.add(track_item)
+                with connect(self._database_runtime) as conn:
+                    log_event(
+                        conn,
+                        "warning",
+                        "Prepared announcement could not be queued; playing music only.",
+                        {"rundown_item_id": item.id, "failure_code": type(exc).__name__},
+                    )
+                    conn.commit()
+        else:
+            self.playback.add(track_item)
+
+        played: list[QueueItem] = []
+        actual_start = datetime.now(timezone.utc)
+        try:
+            for _ in range(queued_count):
+                queued = self.playback.play_next()
+                if queued is not None:
+                    played.append(queued)
+        except Exception as exc:
+            self.rundown_planner.mark_failed(item.id, type(exc).__name__)
+            return {
+                "started": False,
+                "reason": "playback_failed",
+                "rundown_item_id": item.id,
+            }
+
+        if transition == "talk_over" and speech_item is not None:
+            self._record_talkover_public_airtime(speech_item, track_item, item.program_id)
+        else:
+            for queued in played:
+                self._record_public_airtime(queued, item.program_id)
+        if any(queued.track_id == track_item.track_id for queued in played):
+            self._record_play(track_item.track_id, item.program_id or current_program(self._database_runtime)["id"], track_item.duration_seconds)
+
+        speech_seconds = float(speech_item.duration_seconds or 0.0) if speech_item else 0.0
+        track_seconds = float(track_item.duration_seconds or 0.0)
+        actual_seconds = track_seconds + (speech_seconds if transition == "sequential" else 0.0)
+        actual_end = actual_start + timedelta(seconds=actual_seconds)
+        self.rundown_planner.mark_completed(
+            item.id,
+            actual_start=actual_start,
+            actual_end=actual_end,
+        )
+        if self.playback.backend == "simulate":
+            self.playback.now_playing = None
+        with connect(self._database_runtime) as conn:
+            log_event(
+                conn,
+                "info",
+                f"Played rundown item {item.id}: {track['title']} by {track['artist']}.",
+                {
+                    "program_id": item.program_id,
+                    "editorial_mode": editorial_mode,
+                    "transition": transition,
+                },
+            )
+            conn.commit()
+        return {
+            "started": bool(played),
+            "rundown_item_id": item.id,
+            "track_id": track_item.track_id,
+            "item_type": played[0].item_type if played else "track",
+            "editorial_mode": editorial_mode,
+            "transition": transition,
+        }
+
+    def _record_rundown_transition(self, item_id: int, decision, transition: str) -> None:
+        with connect(self._database_runtime) as conn:
+            cursor = conn.execute(
+                """
+                insert into rundown_transitions (
+                    to_item_id, transition_kind, cue_source, cue_confidence,
+                    speech_start_seconds, speech_end_seconds, duck_db, reason,
+                    metadata_json, created_at
+                ) values (?, ?, ?, null, ?, ?, ?, ?, '{}', ?)
+                """,
+                (
+                    item_id,
+                    transition,
+                    decision.cue_source.value,
+                    decision.speech_start_seconds,
+                    decision.speech_end_seconds,
+                    decision.duck_db,
+                    decision.reason,
+                    now_iso(),
+                ),
+            )
+            conn.execute(
+                "update rundown_items set transition_id=?, updated_at=? where id=?",
+                (cursor.lastrowid, now_iso(), item_id),
+            )
+            conn.commit()
+
     def announcement_readiness(self, program_id: str | None = None) -> dict:
+        counts = self._announcement_queue_readiness(program_id)
+        coverage = self.rundown_planner.coverage(datetime.now(timezone.utc))
+        return {
+            **counts,
+            "planned_seconds": coverage.planned_seconds,
+            "rendered_seconds": coverage.rendered_seconds,
+            "fallback_seconds": coverage.fallback_seconds,
+            "air_ready": coverage.air_ready,
+            "needs_refill": coverage.needs_refill,
+            "ready_to_broadcast": coverage.air_ready,
+        }
+
+    def _announcement_queue_readiness(self, program_id: str | None = None) -> dict:
         required = max(0, int(self.settings.min_ready_announcements))
         with connect(self._database_runtime) as conn:
             if program_id:
@@ -290,6 +526,37 @@ class RadioAgent:
         }
 
     def ensure_announcement_prebuffer(self, program_id: str | None = None, max_to_prepare: int | None = None) -> dict:
+        """Compatibility adapter backed by duration coverage and bounded rendering."""
+
+        self.maintain_rundown(max_render_items=0)
+        render_limit = max(0, int(max_to_prepare)) if max_to_prepare is not None else None
+        should_render = (
+            render_limit > 0
+            if render_limit is not None
+            else int(self.settings.max_ready_announcements) > 0
+        )
+        if should_render:
+            try:
+                self._ensure_announcement_prebuffer_legacy(
+                    program_id,
+                    max_to_prepare=render_limit,
+                )
+            except Exception as exc:
+                with connect(self._database_runtime) as conn:
+                    log_event(
+                        conn,
+                        "warning",
+                        "Compatibility announcement preparation failed; duration coverage is unchanged.",
+                        {"failure_code": type(exc).__name__},
+                    )
+                    conn.commit()
+        return self.announcement_readiness(program_id)
+
+    def _ensure_announcement_prebuffer_legacy(
+        self,
+        program_id: str | None = None,
+        max_to_prepare: int | None = None,
+    ) -> dict:
         required = max(0, int(self.settings.min_ready_announcements))
         maximum = max(required, int(self.settings.max_ready_announcements))
         program = current_program(self._database_runtime)
@@ -297,7 +564,7 @@ class RadioAgent:
         if self._has_tracks():
             self._retire_legacy_generic_prebuffer(target_program_id)
             self._retire_duplicate_track_prebuffer(target_program_id)
-        readiness = self.announcement_readiness(program_id)
+        readiness = self._announcement_queue_readiness(program_id)
         if required == 0:
             return readiness
         planned_track_ids = self._ready_announcement_track_ids(target_program_id)
@@ -342,12 +609,12 @@ class RadioAgent:
                         ),
                     )
                     conn.commit()
-                readiness = self.announcement_readiness(program_id)
+                readiness = self._announcement_queue_readiness(program_id)
                 break
             with connect(self._database_runtime) as conn:
                 if track_id is not None and self._ready_track_exists(conn, program_id or program["id"], int(track_id)):
                     conn.commit()
-                    readiness = self.announcement_readiness(program_id)
+                    readiness = self._announcement_queue_readiness(program_id)
                     continue
                 conn.execute(
                     """
@@ -367,7 +634,7 @@ class RadioAgent:
                     ("prebuffer_announcement", text, clip_path, voice or getattr(self.tts, "provider_name", "tts"), program_id or program["id"], now_iso()),
                 )
                 conn.commit()
-            readiness = self.announcement_readiness(program_id)
+            readiness = self._announcement_queue_readiness(program_id)
             prepared_count += 1
         return readiness
 
@@ -917,6 +1184,35 @@ class RadioAgent:
         )
         self.playback.add(item)
         return item
+
+    def _record_talkover_public_airtime(
+        self,
+        speech: QueueItem,
+        track: QueueItem,
+        program_id: str | None,
+    ) -> None:
+        """Classify overlap once: speech while the mic is open, music otherwise."""
+
+        track_seconds = max(0.0, float(track.duration_seconds or 0.0))
+        speech_seconds = min(track_seconds, max(0.0, float(speech.duration_seconds or 0.0)))
+        if speech_seconds:
+            self._record_public_airtime(
+                QueueItem("tts", speech.title, speech.file_path, duration_seconds=speech_seconds),
+                program_id,
+            )
+        music_seconds = max(0.0, track_seconds - speech_seconds)
+        if music_seconds:
+            self._record_public_airtime(
+                QueueItem(
+                    "track",
+                    track.title,
+                    track.file_path,
+                    duration_seconds=music_seconds,
+                    artist=track.artist,
+                    track_id=track.track_id,
+                ),
+                program_id,
+            )
 
     def _record_public_airtime(self, item: QueueItem, program_id: str | None) -> None:
         if item.item_type in {"tts", "speech", "announcement", "live"}:

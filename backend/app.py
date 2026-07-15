@@ -432,7 +432,11 @@ def air_start_readiness(settings: Settings, agent: RadioAgent, prepare_prebuffer
     )
     checklist["announcement_prebuffer"] = _readiness_item(
         buffer_state["ready_to_broadcast"],
-        f"{buffer_state['ready']} / {buffer_state['required']} ready announcements.",
+        (
+            f"{buffer_state['rendered_seconds']} rendered seconds, "
+            f"{buffer_state['planned_seconds']} planned seconds, and "
+            f"{buffer_state['fallback_seconds']} fallback seconds."
+        ),
         "blocking",
     )
     tts_provider = getattr(agent.tts, "provider_name", settings.tts_provider)
@@ -851,6 +855,13 @@ def observability(settings: Settings, agent: RadioAgent) -> dict:
             "ready_to_broadcast": bool(prebuffer["ready_to_broadcast"]),
             "oldest_ready_age_seconds": prebuffer["oldest_ready_age_seconds"],
             "next_announcement_type": prebuffer["next_announcement_type"],
+        },
+        "rundown_coverage": {
+            "planned_seconds": int(prebuffer["planned_seconds"]),
+            "rendered_seconds": int(prebuffer["rendered_seconds"]),
+            "fallback_seconds": int(prebuffer["fallback_seconds"]),
+            "needs_refill": bool(prebuffer["needs_refill"]),
+            "air_ready": bool(prebuffer["air_ready"]),
         },
         "generated_clips": int(generated),
         "recent_errors": errors,
