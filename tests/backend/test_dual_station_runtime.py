@@ -183,6 +183,9 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
         assert "blank.detect(" in script
         assert "blank.skip(" in script
         assert Path(rendered["fallback_queue_path"]).exists()
+        assert rendered["fallback_coverage_seconds"] == 0
+        assert rendered["fallback_required_seconds"] == 21_600
+        assert rendered["fallback_air_ready"] is False
 
 
 def test_aac_192_preflight_rejects_liquidsoap_without_fdkaac() -> None:

@@ -455,6 +455,40 @@ class RadioTEDUCoreTests(unittest.TestCase):
             self.assertIn(status["health"], {"missing", "ready", "running"})
             self.assertEqual(2, status["queue_length"])
             self.assertTrue(status["queue_exists"])
+            self.assertEqual(0, status["fallback_coverage_seconds"])
+            self.assertFalse(status["fallback_air_ready"])
+
+    def test_operator_fallback_observability_reports_duration_and_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = self.make_settings(root)
+            init_db(settings)
+            timestamp = now_iso()
+            with connect(settings) as conn:
+                for index in range(5):
+                    path = settings.music_path / f"fallback-{index}.aac"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"audio")
+                    conn.execute(
+                        """
+                        insert into tracks (
+                            title, artist, genre, duration_seconds, file_path,
+                            play_count, created_at, updated_at
+                        ) values (?, 'RadioTEDU', 'pop', 3600, ?, 0, ?, ?)
+                        """,
+                        (f"Fallback {index}", str(path), timestamp, timestamp),
+                    )
+                conn.commit()
+
+            from backend.app import emergency_fallback_playlist
+            from backend.fallback_playlist import FallbackPlaylistBuilder
+
+            FallbackPlaylistBuilder(settings).rebuild()
+            status = emergency_fallback_playlist(settings)
+
+            self.assertEqual(18_000, status["coverage_seconds"])
+            self.assertEqual(21_600, status["required_seconds"])
+            self.assertFalse(status["air_ready"])
 
     def test_liquidsoap_status_reports_icecast_mount_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

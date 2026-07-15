@@ -11,6 +11,7 @@ from pathlib import Path
 from .audio.models import BROADCAST_AUDIO_POLICY
 from .audio.processing import ProcessingProfile
 from .config import Settings
+from .fallback_playlist import FallbackPlaylistBuilder
 
 
 _STATION_LIQUIDSOAP = {
@@ -172,6 +173,11 @@ def render_liquidsoap_config(
     script_path.parent.mkdir(parents=True, exist_ok=True)
     if not queue_path.exists():
         queue_path.write_text("", encoding="utf-8")
+    fallback_queue_path = queue_path.with_name("fallback.m3u")
+    fallback_status = FallbackPlaylistBuilder(
+        settings,
+        playlist_path=fallback_queue_path,
+    ).rebuild()
     mount = settings.liquidsoap_mount if settings.liquidsoap_mount.startswith("/") else f"/{settings.liquidsoap_mount}"
     playout = {
         "silence_threshold_dbfs": BROADCAST_AUDIO_POLICY.silence_threshold_dbfs,
@@ -191,9 +197,6 @@ def render_liquidsoap_config(
     station_rendered: dict[str, object] = {}
     if station_template:
         station, template_path = station_template
-        fallback_queue_path = queue_path.with_name("fallback.m3u")
-        if not fallback_queue_path.exists():
-            fallback_queue_path.write_text("", encoding="utf-8")
         script, station_rendered = _render_station_template(
             template_path,
             station,
@@ -294,6 +297,11 @@ output.icecast(
         "icecast_url": f"http://{settings.liquidsoap_host}:{settings.liquidsoap_port}{mount}",
         "processing_profile": processing_profile.name,
         "playout": playout,
+        "fallback_queue_path": str(fallback_status.playlist_path),
+        "fallback_track_count": fallback_status.track_count,
+        "fallback_coverage_seconds": fallback_status.coverage_seconds,
+        "fallback_required_seconds": fallback_status.required_seconds,
+        "fallback_air_ready": fallback_status.air_ready,
         **station_rendered,
     }
 
@@ -382,6 +390,7 @@ def liquidsoap_status(settings: Settings, icecast_checker=None) -> dict:
     queue_path = Path(settings.liquidsoap_queue_path)
     queue_exists = queue_path.exists()
     queue_length = _queue_length(queue_path) if queue_exists else 0
+    fallback = FallbackPlaylistBuilder(settings).status()
     if not settings.liquidsoap_enabled:
         health = "disabled"
     elif running:
@@ -406,6 +415,11 @@ def liquidsoap_status(settings: Settings, icecast_checker=None) -> dict:
         "queue_path": settings.liquidsoap_queue_path,
         "queue_exists": queue_exists,
         "queue_length": queue_length,
+        "fallback_queue_path": str(fallback.playlist_path),
+        "fallback_track_count": fallback.track_count,
+        "fallback_coverage_seconds": fallback.coverage_seconds,
+        "fallback_required_seconds": fallback.required_seconds,
+        "fallback_air_ready": fallback.air_ready,
         "mount": mount,
         "icecast_url": icecast_url,
         "icecast_reachable": icecast["reachable"],

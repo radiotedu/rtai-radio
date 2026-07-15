@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .art.cover_generator import generate_covers
 from .config import Settings
+from .fallback_playlist import FallbackPlaylistBuilder
 from .database import connect, log_event, now_iso, rows_to_dicts
 from .liquidsoap import liquidsoap_status, render_liquidsoap_config, start_liquidsoap, stop_liquidsoap, verify_liquidsoap_output
 from .llm import ollama_runtime_status
@@ -707,6 +708,7 @@ def weekly_schedule(settings: Settings) -> dict:
 
 
 def emergency_fallback_playlist(settings: Settings, limit: int = 8) -> dict:
+    fallback = FallbackPlaylistBuilder(settings).rebuild()
     with connect(settings) as conn:
         rows = rows_to_dicts(
             conn.execute(
@@ -721,12 +723,22 @@ def emergency_fallback_playlist(settings: Settings, limit: int = 8) -> dict:
             ).fetchall()
         )
     tracks = []
+    music_root = settings.music_path.resolve()
     for row in rows:
         file_path = str(row.pop("file_path") or "")
-        if not file_path or not Path(file_path).exists():
+        resolved = Path(file_path).expanduser().resolve()
+        if not file_path or not resolved.is_file() or not resolved.is_relative_to(music_root):
             continue
         tracks.append({**row, "file_exists": True})
-    return {"channel_id": "radiotedu", "count": len(tracks), "tracks": tracks}
+    return {
+        "channel_id": "radiotedu",
+        "count": len(tracks),
+        "tracks": tracks,
+        "playlist_path": str(fallback.playlist_path),
+        "coverage_seconds": fallback.coverage_seconds,
+        "required_seconds": fallback.required_seconds,
+        "air_ready": fallback.air_ready,
+    }
 
 
 def latest_segment_clip(settings: Settings) -> dict:
