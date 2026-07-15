@@ -17,6 +17,8 @@ This runbook applies only to the broadcasting computer. The builder machine does
 | `radiotedu-en` | `/en` | `https://stream.radiotedu.com/en` |
 | `radiotedu-fr` | `/fr` | `https://stream.radiotedu.com/fr` |
 
+`https://stream.radiotedu.com` is Icecast-only and exposes the `/en` and `/fr` audio mounts; it does not host HTML, the listener UI, or an API. The single listener page is `https://radiotedu.com/ai`, hosted by the website computer with an in-page EN/FR station selector. Do not create `/ai/en` or `/ai/fr`.
+
 Both use source username `source`, profile `aac_192`, AAC-LC 192 kbps, and `public=true`. Liquidsoap must support FDK-AAC and render `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`. Missing FDK-AAC is a hard preflight failure.
 
 The source credential shared during development must be rotated before production. Store the rotated value and HMAC secrets only in the protected service environment. Never include them in the repository, prompt, command history, logs, or evidence.

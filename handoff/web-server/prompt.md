@@ -4,7 +4,7 @@ You are Codex on the RadioTEDU website/API server. This computer is not the buil
 
 ## Objective
 
-Stage the public-only RadioTEDU platform and bilingual listener pages. Run `backend.public_app`, not the operator/broadcast `backend.app`. This server receives signed public state but has no music library, AI/TTS, Liquidsoap, source credential, autonomous playout orchestrator, or remote playout controls.
+Stage the public-only RadioTEDU platform and its single bilingual listener page at `https://radiotedu.com/ai`. Run `backend.public_app`, not the operator/broadcast `backend.app`. This server receives signed public state but has no music library, AI/TTS, Liquidsoap, source credential, autonomous playout orchestrator, or remote playout controls.
 
 This is a status-only service with no control surface. Accept and render only sanitized EN/FR public state; do not receive station rundown rows, local paths, editorial research notes, voice references, HMAC material in payloads, Icecast source credentials, logs, incidents, or operator tasks.
 
@@ -13,9 +13,10 @@ Stop after staging and conformance verification. Do not switch production traffi
 ## Fixed contract
 
 - API origin: `https://api.radiotedu.com`
-- Listener routes: `/ai`, `/ai/en`, `/ai/fr`; `/ai` is the English compatibility entry.
+- Listener page: `https://radiotedu.com/ai`; this is the single listener page.
+- Language/station choice: one visible, keyboard-accessible in-page EN/FR station selector; do not create `/ai/en` or `/ai/fr`.
 - Station IDs: `radiotedu-en`, `radiotedu-fr`
-- Public streams: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
+- Icecast-only origin: `https://stream.radiotedu.com`, with public audio mounts `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr`. It must not serve HTML, API, or application routes.
 - Private Icecast upstream: `10.98.98.75:11154`, mounts `/en` and `/fr`
 - Broadcast service identity: `school-radio-pc`
 - Allowed scope: `agent:playout`
@@ -30,7 +31,7 @@ The website server does not need and must never receive the Icecast source passw
 
 ## Public product boundary
 
-Each EN/FR page contains only:
+The single `/ai` page contains only:
 
 - stream player with browser-local play/pause;
 - now playing;
@@ -39,7 +40,9 @@ Each EN/FR page contains only:
 - rolling 14-day music/talking percentages;
 - curated editorial sound-character tags.
 
-No admin, contact, message, call, purchase, wallet, reward, voting, social posting, sharing, or playout-control capability may appear in the UI or public OpenAPI. Do not imitate Andon FM branding or layout; retain the original RadioTEDU design and only its clear information hierarchy.
+No admin, contact, message, call, purchase, wallet, reward, voting, social posting, sharing, or playout-control capability may appear in the UI or public OpenAPI.
+
+Use an Andon FM-inspired dark, minimal, atmospheric information hierarchy: prominent central listening control, strong now-playing focus, restrained typography, generous spacing, and calm supporting information. Keep original RadioTEDU branding, copy, colors, and assets; do not copy Andon FM logos, text, illustrations, source assets, or distinctive branded artwork.
 
 The browser-local play/pause control starts or pauses only the visitor's audio element for the public stream URL. It never issues broadcast, playlist, or Liquidsoap commands, and it must not call any endpoint that changes station state.
 
@@ -59,8 +62,8 @@ Sound tags come only from curated program `vibe` and track `mood` metadata throu
 4. Store the distinct EN and FR HMAC verification secrets in the server secret manager or ACL-protected environment. Never print, log, commit, or paste them into Codex. Do not configure a source password on this machine.
 5. Configure a durable database path and backup/restore procedure for snapshots, play events, covers, idempotency records, nonce replay records, listener sessions, and the last valid station snapshots.
 6. Start the staging service with `python -m backend.public_app` or the equivalent service-manager command. Bind it behind the staging reverse proxy; do not expose `backend.app`.
-7. Configure the main website reverse proxy so `/ai`, `/ai/en`, `/ai/fr`, `/assets`, and versioned API/session paths reach the public app as appropriate. Configure `api.radiotedu.com` for the canonical API. Reject oversized requests at the proxy before forwarding: 256 KiB for snapshots and play events, and 5 MiB for cover uploads; keep the application-level bounded streaming checks enabled as defense in depth.
-8. Configure `stream.radiotedu.com` to terminate valid HTTPS and proxy `/en` and `/fr` to the corresponding private Icecast mounts. Do not expose the Icecast admin interface or source port publicly.
+7. Configure the main website reverse proxy so only `/ai`, `/assets`, and versioned API/session paths reach the public app as appropriate. Configure `api.radiotedu.com` for the canonical API. Reject oversized requests at the proxy before forwarding: 256 KiB for snapshots and play events, and 5 MiB for cover uploads; keep the application-level bounded streaming checks enabled as defense in depth.
+8. Configure the Icecast-only `stream.radiotedu.com` origin to terminate valid HTTPS and proxy only `/en` and `/fr` to the corresponding private Icecast mounts. It must not serve the listener UI, HTML, or API routes. Do not expose the Icecast admin interface or source port publicly.
 
 ## Canonical API and security
 
@@ -91,7 +94,7 @@ python scripts/smoke_public_server.py --base-url http://127.0.0.1:<staging-port>
 
 Before accepting staging, also prove:
 
-- `/ai`, `/ai/en`, and `/ai/fr` render localized status-only pages with a keyboard-visible language switch;
+- `https://radiotedu.com/ai` renders the localized status-only single listener page with a keyboard-visible in-page EN/FR station selector, without `/ai/en` or `/ai/fr` listener routes;
 - the EN player uses `https://stream.radiotedu.com/en` and FR uses `https://stream.radiotedu.com/fr`;
 - browser playback works through the public TLS host in staging;
 - fresh, stale, and absent snapshots render honestly and the last valid snapshot survives polling failures;

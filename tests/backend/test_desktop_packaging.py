@@ -213,3 +213,17 @@ def test_web_prompt_remains_status_only_and_two_prompts_are_canonical() -> None:
     assert "browser-local play/pause" in web_prompt
     assert "visitor's audio element" in web_prompt
     assert "never issues broadcast, playlist, or liquidsoap commands" in web_prompt
+
+    broadcast_prompt = (ROOT / "handoff" / "broadcast-server" / "prompt.md").read_text(encoding="utf-8").casefold()
+    for prompt in (web_prompt, broadcast_prompt):
+        assert "https://radiotedu.com/ai" in prompt
+        assert "icecast-only" in prompt
+        assert "https://stream.radiotedu.com/en" in prompt
+        assert "https://stream.radiotedu.com/fr" in prompt
+        assert "do not create `/ai/en` or `/ai/fr`" in prompt
+
+    assert "single listener page" in web_prompt
+    assert "in-page en/fr station selector" in web_prompt
+    assert "andon fm-inspired" in web_prompt
+    assert "original radiotedu" in web_prompt
+    assert "must not serve html, api, or application routes" in web_prompt

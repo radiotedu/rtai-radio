@@ -18,12 +18,13 @@ Stop after staging and conformance verification. Stop before production: do not 
 - Encoder: `aac_192`, AAC-LC 192 kbps
 - Liquidsoap encoder: `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`
 - Directory listing: `public=true`
-- Public players: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
+- Public streams: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
+- Icecast-only origin: `https://stream.radiotedu.com`, exposing only the public audio mounts `/en` and `/fr`; it does not host the listener UI or API.
 - Platform API: `https://api.radiotedu.com`
 - Service identity: `school-radio-pc`
 - Scope: `agent:playout`
 - Snapshot heartbeat: 10 seconds
-- Public UI routes: `/ai`, `/ai/en`, `/ai/fr`; the broadcast computer does not host them.
+- Listener page: `https://radiotedu.com/ai`; this is the single listener page and the broadcast computer does not host it. Do not create `/ai/en` or `/ai/fr`.
 - Coverage target: at least four hours planned and 60 minutes rendered per station.
 - Refill trigger: strictly below two hours planned.
 - Emergency fallback: at least six hours of validated local music per station.
