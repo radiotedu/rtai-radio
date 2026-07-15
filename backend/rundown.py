@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,7 +15,17 @@ from .stations.context import StationContext, coerce_station_context
 
 ACTIVE_STATES = ("planned", "researching", "rendering", "ready", "queued", "playing")
 RENDERED_STATES = ("ready", "queued", "playing")
+RETIRABLE_STATES = ("planned", "researching", "rendering", "ready", "queued")
 MIN_MUSIC_TRACK_SECONDS = 30
+POP_COMPATIBLE_GENRES = {
+    "pop",
+    "r&b",
+    "rnb",
+    "rhythm and blues",
+    "dance",
+    "indie pop",
+    "soft rock",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,10 +149,20 @@ class RundownPlanner:
     def maintain(self, now: datetime) -> CoverageStatus:
         now = _aware_utc(now)
         self._retire_expired(now)
+        self._promote_planned_until(now, self.policy.rendered_seconds)
         status = self.coverage(now)
-        if status.planned_seconds < self.policy.planned_seconds:
+        if status.needs_refill:
             self._append_valid_tracks_until(now, self.policy.planned_seconds)
+            self._promote_planned_until(now, self.policy.rendered_seconds)
         return self.coverage(now)
+
+    def has_playing(self) -> bool:
+        with connect(self._database_runtime) as conn:
+            return bool(
+                conn.execute(
+                    "select 1 from rundown_items where state='playing' limit 1"
+                ).fetchone()
+            )
 
     def claim_next_ready(self, now: datetime) -> RundownItem | None:
         now = _aware_utc(now)
@@ -200,6 +221,34 @@ class RundownPlanner:
             )
             conn.commit()
 
+    def mark_playing(
+        self,
+        item_id: int,
+        *,
+        actual_start: datetime,
+        expected_duration_seconds: float,
+        metadata: dict,
+    ) -> None:
+        start = _aware_utc(actual_start)
+        duration = max(0.0, float(expected_duration_seconds))
+        with connect(self._database_runtime) as conn:
+            conn.execute(
+                """
+                update rundown_items
+                set state='playing', actual_start=?, actual_duration_seconds=?,
+                    metadata_json=?, updated_at=?
+                where id=? and state='queued'
+                """,
+                (
+                    start.isoformat(),
+                    duration,
+                    json.dumps(metadata, ensure_ascii=True, sort_keys=True),
+                    now_iso(),
+                    item_id,
+                ),
+            )
+            conn.commit()
+
     def mark_failed(self, item_id: int, error_code: str) -> None:
         safe_code = "_".join(str(error_code).casefold().split())[:80] or "unknown"
         with connect(self._database_runtime) as conn:
@@ -218,10 +267,42 @@ class RundownPlanner:
             conn.execute(
                 f"""
                 update rundown_items set state='stale', updated_at=?
-                where state in ({','.join('?' for _ in ACTIVE_STATES)}) and planned_end <= ?
+                where state in ({','.join('?' for _ in RETIRABLE_STATES)}) and planned_end <= ?
                 """,
-                (now_iso(), *ACTIVE_STATES, now.isoformat()),
+                (now_iso(), *RETIRABLE_STATES, now.isoformat()),
             )
+            conn.commit()
+
+    def _promote_planned_until(self, now: datetime, target_seconds: int) -> None:
+        status = self.coverage(now)
+        rendered = status.rendered_seconds
+        if rendered >= target_seconds:
+            return
+        with connect(self._database_runtime) as conn:
+            rows = conn.execute(
+                """
+                select id, planned_start, planned_end
+                from rundown_items
+                where state='planned' and planned_end > ?
+                order by planned_start, id
+                """,
+                (now.isoformat(),),
+            ).fetchall()
+            for row in rows:
+                if rendered >= target_seconds:
+                    break
+                start = _parse_time(row["planned_start"])
+                end = _parse_time(row["planned_end"])
+                remaining = max(0, int(round((end - max(now, start)).total_seconds())))
+                conn.execute(
+                    """
+                    update rundown_items
+                    set state='ready', rendered_path=source_path, updated_at=?
+                    where id=? and state='planned'
+                    """,
+                    (now_iso(), row["id"]),
+                )
+                rendered += remaining
             conn.commit()
 
     def _append_valid_tracks_until(self, now: datetime, target_seconds: int) -> None:
@@ -245,22 +326,40 @@ class RundownPlanner:
                 """,
                 ACTIVE_STATES,
             ).fetchone()[0]
-            active_count = conn.execute(
-                f"select count(*) from rundown_items where state in ({','.join('?' for _ in ACTIVE_STATES)})",
-                ACTIVE_STATES,
-            ).fetchone()[0]
+            rotation_genres = [
+                row["genre"]
+                for row in conn.execute(
+                    """
+                    select tracks.genre from rundown_items
+                    join tracks on tracks.id = rundown_items.track_id
+                    order by rundown_items.planned_start, rundown_items.id
+                    """
+                ).fetchall()
+            ]
         cursor = max(now, _parse_time(latest) if latest else now)
         coverage_status = self.coverage(now)
         coverage = coverage_status.planned_seconds
         rendered = coverage_status.rendered_seconds
-        index = int(active_count) % len(tracks)
+        pop_tracks = [track for track in tracks if _is_pop_compatible(track.get("genre"))]
+        other_tracks = [track for track in tracks if not _is_pop_compatible(track.get("genre"))]
+        compatible_count = sum(_is_pop_compatible(genre) for genre in rotation_genres)
+        other_count = len(rotation_genres) - compatible_count
+        slot = len(rotation_genres)
         timestamp = now_iso()
         planned_rows: list[tuple] = []
         while coverage <= target_seconds:
-            track = tracks[index % len(tracks)]
+            wants_pop = slot % 4 != 3
+            if wants_pop and pop_tracks:
+                track = pop_tracks[compatible_count % len(pop_tracks)]
+                compatible_count += 1
+            elif not wants_pop and other_tracks:
+                track = other_tracks[other_count % len(other_tracks)]
+                other_count += 1
+            else:
+                track = tracks[slot % len(tracks)]
             duration = float(track["duration_seconds"])
             planned_end = cursor + timedelta(seconds=duration)
-            state = "ready" if rendered <= self.policy.rendered_seconds else "planned"
+            state = "ready" if rendered < self.policy.rendered_seconds else "planned"
             local_start = cursor.astimezone(ZoneInfo(self.context.profile.timezone))
             program = current_program(self._database_runtime, local_start)
             rendered_path = track["file_path"] if state == "ready" else None
@@ -283,7 +382,7 @@ class RundownPlanner:
             if state == "ready":
                 rendered += int(round(duration))
             cursor = planned_end
-            index += 1
+            slot += 1
         with connect(self._database_runtime) as conn:
             for planned_row in planned_rows:
                 conn.execute(
@@ -303,6 +402,11 @@ def _aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("rundown times must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _is_pop_compatible(value: object) -> bool:
+    normalized = " ".join(str(value or "").casefold().replace("-", " ").replace("_", " ").split())
+    return normalized in POP_COMPATIBLE_GENRES
 
 
 def _parse_time(value: str) -> datetime:

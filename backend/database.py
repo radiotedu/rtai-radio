@@ -476,6 +476,19 @@ def migrate_program_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"alter table programs add column {name} {column_type}")
 
 
+def migrate_track_cue_columns(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("pragma table_info(tracks)").fetchall()}
+    additions = {
+        "cue_source": "text",
+        "intro_end_seconds": "real",
+        "intro_confidence": "real",
+        "immediate_loud_vocal": "integer not null default 0",
+    }
+    for name, column_type in additions.items():
+        if name not in existing:
+            conn.execute(f"alter table tracks add column {name} {column_type}")
+
+
 def log_event(conn: sqlite3.Connection, level: str, message: str, metadata: dict | None = None) -> None:
     conn.execute(
         "insert into agent_logs (level, message, metadata_json, created_at) values (?, ?, ?, ?)",
@@ -1056,5 +1069,23 @@ DEFAULT_MIGRATIONS = (
         RUNDOWN_SCHEMA,
         required_columns=_schema_column_requirements(RUNDOWN_SCHEMA),
         schema_contract=_schema_contract(RUNDOWN_SCHEMA),
+    ),
+    Migration(
+        9,
+        "add_track_cue_metadata",
+        "select 1;",
+        required_columns=(
+            (
+                "tracks",
+                (
+                    ("cue_source", "text"),
+                    ("intro_end_seconds", "real"),
+                    ("intro_confidence", "real"),
+                    ("immediate_loud_vocal", "integer"),
+                ),
+            ),
+        ),
+        migration_step=migrate_track_cue_columns,
+        operation_name="migrate_track_cue_columns_v1",
     ),
 )

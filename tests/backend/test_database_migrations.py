@@ -159,6 +159,25 @@ def test_rundown_migration_is_versioned_with_durable_transition_tables(tmp_path:
     } <= rundown_columns
 
 
+def test_track_cue_migration_adds_curated_and_estimated_cue_fields(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+
+    database.init_db(settings)
+
+    with database.connect(settings) as conn:
+        columns = {row["name"] for row in conn.execute("pragma table_info(tracks)").fetchall()}
+        checkpoint = conn.execute(
+            "select name from schema_migrations where version=9"
+        ).fetchone()
+    assert {
+        "cue_source",
+        "intro_end_seconds",
+        "intro_confidence",
+        "immediate_loud_vocal",
+    } <= columns
+    assert tuple(checkpoint) == ("add_track_cue_metadata",)
+
+
 def test_migrations_are_applied_in_version_order() -> None:
     Migration, _, apply_migrations = migration_api()
     with sqlite3.connect(":memory:") as conn:

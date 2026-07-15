@@ -48,7 +48,16 @@ def _public_http_url(value: object) -> str:
 
 def result_matches(result: SearchResult, title: str, artist: str) -> bool:
     haystack = clean_identity(f"{result.title} {result.snippet}")
-    return bool(title and artist and title in haystack and artist in haystack)
+    return bool(
+        title
+        and artist
+        and _contains_identity_phrase(haystack, title)
+        and _contains_identity_phrase(haystack, artist)
+    )
+
+
+def _contains_identity_phrase(haystack: str, identity: str) -> bool:
+    return bool(re.search(rf"(?:^| ){re.escape(identity)}(?: |$)", haystack))
 
 
 class EditorialResearchService:
@@ -92,4 +101,3 @@ class EditorialResearchService:
                     match_evidence=f"title+artist:{title}|{artist}",
                 )
         return None
-

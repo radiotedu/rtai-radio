@@ -210,3 +210,6 @@ def test_web_prompt_remains_status_only_and_two_prompts_are_canonical() -> None:
     assert "status-only" in web_prompt
     assert "no control surface" in web_prompt
     assert "sanitized" in web_prompt
+    assert "browser-local play/pause" in web_prompt
+    assert "visitor's audio element" in web_prompt
+    assert "never issues broadcast, playlist, or liquidsoap commands" in web_prompt

@@ -1,4 +1,4 @@
-from backend.editorial_research import EditorialResearchService
+from backend.editorial_research import EditorialResearchService, clean_identity, result_matches
 from backend.search.base import SearchResult
 
 
@@ -66,6 +66,30 @@ def test_artist_only_collision_is_rejected():
     ) is None
 
 
+def test_identity_substrings_inside_longer_title_and_artist_are_rejected():
+    provider = RecordingProvider(
+        results=[
+            SearchResult(
+                "Blue in Greenhouse by Miles Davidson",
+                "https://music.example/wrong-recording",
+                "Miles Davidson recorded Blue in Greenhouse for a later collection.",
+                "searxng",
+            )
+        ]
+    )
+
+    result = provider.results[0]
+    assert result_matches(
+        result,
+        clean_identity("Blue in Green"),
+        clean_identity("Miles Davis"),
+    ) is False
+    assert EditorialResearchService(provider).research(
+        {"id": 2, "title": "Blue in Green", "artist": "Miles Davis", "genre": "jazz"},
+        "en",
+    ) is None
+
+
 def test_rejects_non_http_and_lyrics_results():
     provider = RecordingProvider(
         results=[
@@ -88,4 +112,3 @@ def test_rejects_non_http_and_lyrics_results():
         {"id": 2, "title": "Blue in Green", "artist": "Miles Davis", "genre": "jazz"},
         "en",
     ) is None
-

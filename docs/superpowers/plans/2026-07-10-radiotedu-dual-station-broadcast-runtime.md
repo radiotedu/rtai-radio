@@ -660,9 +660,9 @@ def test_liquidsoap_config_uses_only_selected_station(en_context, fr_context) ->
     en_text = Path(en_result["script_path"]).read_text(encoding="utf-8")
     fr_text = Path(fr_result["script_path"]).read_text(encoding="utf-8")
 
-    assert 'mount="/radiotedu-en"' in en_text
+    assert 'mount="/en"' in en_text
     assert "radiotedu-fr" not in en_text
-    assert 'mount="/radiotedu-fr"' in fr_text
+    assert 'mount="/fr"' in fr_text
     assert "radiotedu-en" not in fr_text
 ```
 

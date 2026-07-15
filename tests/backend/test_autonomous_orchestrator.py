@@ -49,8 +49,9 @@ class AutonomousOrchestratorTests(unittest.TestCase):
             settings = self.make_settings(Path(tmp))
             init_db(settings)
             with connect(settings) as conn:
+                conn.execute("update programs set active=0")
                 conn.execute(
-                    "update programs set start_time='00:00', end_time='23:59', days_of_week='mon,tue,wed,thu,fri,sat,sun' where id='weekend_transmission'"
+                    "update programs set active=1, start_time='00:00', end_time='23:59', days_of_week='mon,tue,wed,thu,fri,sat,sun' where id='weekend_transmission'"
                 )
                 conn.commit()
             program = current_program(settings)
@@ -64,6 +65,9 @@ class AutonomousOrchestratorTests(unittest.TestCase):
             settings.max_ready_announcements = 1
             make_wav(root / "music" / "Alice - Blue Room.wav")
             scan_music(settings)
+            with connect(settings) as conn:
+                conn.execute("update tracks set duration_seconds=180")
+                conn.commit()
             orchestrator = AutonomousOrchestrator(settings, RadioAgent(settings))
             result = orchestrator.tick()
             self.assertTrue(result["played"])

@@ -120,7 +120,7 @@ def test_broadcast_audio_policy_freezes_professional_qualification_inputs() -> N
     assert BROADCAST_AUDIO_POLICY.silence_degraded_primary_seconds == 1.0
     assert BROADCAST_AUDIO_POLICY.silence_fallback_seconds == 1.5
     assert BROADCAST_AUDIO_POLICY.listener_visible_silence_limit_seconds == 2.0
-    assert BROADCAST_AUDIO_POLICY.talk_over_minimum_intro_confidence == 0.85
+    assert BROADCAST_AUDIO_POLICY.talk_over_minimum_intro_confidence == 0.65
     assert BROADCAST_AUDIO_POLICY.talk_over_minimum_instrumental_intro_seconds == 3.0
     assert BROADCAST_AUDIO_POLICY.speech_target_before_intro_end_seconds == 0.5
     assert BROADCAST_AUDIO_POLICY.speech_target_before_intro_end_min_seconds == 0.3

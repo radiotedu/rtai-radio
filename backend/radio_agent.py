@@ -203,10 +203,10 @@ class RadioAgent:
                 log_event(conn, "info", "Waiting for announcement prebuffer before broadcast.", prebuffer)
                 conn.commit()
             return {"started": False, "reason": "announcement_prebuffer_not_ready", **prebuffer}
-        announcement = self._consume_ready_announcement(program["id"])
+        candidates = self._candidates(program)
+        announcement = self._consume_ready_announcement_for_candidates(program["id"], candidates)
         selected = self._track_from_announcement(announcement) if announcement else None
         choice = None
-        candidates = self._candidates(program)
         if selected is None and not candidates:
             return {"started": False, "reason": "no_candidates"}
         if selected is None and announcement is None and int(prebuffer.get("required") or 0) > 0:
@@ -293,13 +293,20 @@ class RadioAgent:
     def queue_next_ready_rundown_item(self) -> dict:
         """Claim and play one durable item without making live search or LLM calls."""
 
+        if self.rundown_planner.has_playing():
+            return {"started": False, "reason": "rundown_item_playing"}
         claimed_at = datetime.now(timezone.utc)
         item = self.rundown_planner.claim_next_ready(claimed_at)
         if item is None:
             return {"started": False, "reason": "no_ready_rundown_item"}
         with connect(self._database_runtime) as conn:
             row = conn.execute(
-                "select id, title, artist, genre, duration_seconds, file_path from tracks where id=?",
+                """
+                select id, title, artist, genre, duration_seconds, file_path,
+                       cue_source, intro_end_seconds, intro_confidence,
+                       immediate_loud_vocal
+                from tracks where id=?
+                """,
                 (item.track_id,),
             ).fetchone()
         if row is None or not Path(str(row["file_path"])).expanduser().is_file():
@@ -315,7 +322,11 @@ class RadioAgent:
             artist=track.get("artist"),
             track_id=int(track["id"]),
         )
-        announcement = self._consume_ready_announcement(item.program_id) if item.program_id else None
+        announcement = (
+            self._consume_ready_announcement(item.program_id, int(track["id"]))
+            if item.program_id
+            else None
+        )
         speech_item: QueueItem | None = None
         decision = None
         transition = "none"
@@ -334,6 +345,7 @@ class RadioAgent:
                     genre = Genre(str(track.get("genre") or "other").casefold())
                 except ValueError:
                     genre = Genre.OTHER
+                cue = self._cue_for_track(track)
                 decision = self.segue_policy.choose(
                     None,
                     SegueItem(MediaKind.SPEECH, float(speech_item.duration_seconds or 0.0)),
@@ -341,7 +353,7 @@ class RadioAgent:
                         MediaKind.MUSIC,
                         float(track_item.duration_seconds or 0.0),
                         genre=genre,
-                        cue=CueMetadata(cue_source=CueSource.DEFAULT),
+                        cue=cue,
                     ),
                 )
                 if decision.kind is SegueKind.TALK_OVER:
@@ -361,7 +373,7 @@ class RadioAgent:
                     transition = "sequential"
                     queued_count = 2
                 editorial_mode = "prepared_announcement"
-                self._record_rundown_transition(item.id, decision, transition)
+                self._record_rundown_transition(item.id, decision, transition, cue)
             except (OSError, RuntimeError, ValueError) as exc:
                 self.playback.add(track_item)
                 with connect(self._database_runtime) as conn:
@@ -390,6 +402,42 @@ class RadioAgent:
                 "rundown_item_id": item.id,
             }
 
+        speech_seconds = float(speech_item.duration_seconds or 0.0) if speech_item else 0.0
+        track_seconds = float(track_item.duration_seconds or 0.0)
+        actual_seconds = track_seconds + (speech_seconds if transition == "sequential" else 0.0)
+        if self.playback.backend == "liquidsoap":
+            self.rundown_planner.mark_playing(
+                item.id,
+                actual_start=actual_start,
+                expected_duration_seconds=actual_seconds,
+                metadata={
+                    "transition": transition,
+                    "editorial_mode": editorial_mode,
+                    "speech_seconds": speech_seconds,
+                    "track_seconds": track_seconds,
+                },
+            )
+            with connect(self._database_runtime) as conn:
+                log_event(
+                    conn,
+                    "info",
+                    f"Submitted rundown item {item.id} to Liquidsoap: {track['title']} by {track['artist']}.",
+                    {
+                        "program_id": item.program_id,
+                        "editorial_mode": editorial_mode,
+                        "transition": transition,
+                    },
+                )
+                conn.commit()
+            return {
+                "started": bool(played),
+                "rundown_item_id": item.id,
+                "track_id": track_item.track_id,
+                "item_type": played[0].item_type if played else "track",
+                "editorial_mode": editorial_mode,
+                "transition": transition,
+            }
+
         if transition == "talk_over" and speech_item is not None:
             self._record_talkover_public_airtime(speech_item, track_item, item.program_id)
         else:
@@ -398,9 +446,6 @@ class RadioAgent:
         if any(queued.track_id == track_item.track_id for queued in played):
             self._record_play(track_item.track_id, item.program_id or current_program(self._database_runtime)["id"], track_item.duration_seconds)
 
-        speech_seconds = float(speech_item.duration_seconds or 0.0) if speech_item else 0.0
-        track_seconds = float(track_item.duration_seconds or 0.0)
-        actual_seconds = track_seconds + (speech_seconds if transition == "sequential" else 0.0)
         actual_end = actual_start + timedelta(seconds=actual_seconds)
         self.rundown_planner.mark_completed(
             item.id,
@@ -430,7 +475,154 @@ class RadioAgent:
             "transition": transition,
         }
 
-    def _record_rundown_transition(self, item_id: int, decision, transition: str) -> None:
+    def reconcile_playing_rundown(self, now: datetime | None = None) -> dict:
+        """Finalize a Liquidsoap submission only after its measured airtime elapsed."""
+
+        if self.playback.backend != "liquidsoap":
+            return {"completed": False, "reason": "blocking_playback_backend"}
+        checked_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        with connect(self._database_runtime) as conn:
+            conn.execute("begin immediate")
+            row = conn.execute(
+                """
+                select rundown_items.*, tracks.title as track_title,
+                       tracks.artist as track_artist
+                from rundown_items
+                join tracks on tracks.id = rundown_items.track_id
+                where rundown_items.state='playing'
+                order by rundown_items.actual_start, rundown_items.id
+                limit 1
+                """
+            ).fetchone()
+            if row is None:
+                conn.execute("commit")
+                return {"completed": False, "reason": "no_playing_rundown_item"}
+            start = datetime.fromisoformat(str(row["actual_start"]).replace("Z", "+00:00"))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            start = start.astimezone(timezone.utc)
+            expected_seconds = max(
+                0.0,
+                float(row["actual_duration_seconds"] or row["measured_duration_seconds"] or 0.0),
+            )
+            expected_end = start + timedelta(seconds=expected_seconds)
+            if checked_at < expected_end:
+                conn.execute("commit")
+                return {
+                    "completed": False,
+                    "reason": "airtime_in_progress",
+                    "rundown_item_id": int(row["id"]),
+                }
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except Exception:
+                metadata = {}
+            track_seconds = max(
+                0.0,
+                float(metadata.get("track_seconds") or row["measured_duration_seconds"] or 0.0),
+            )
+            speech_seconds = max(0.0, float(metadata.get("speech_seconds") or 0.0))
+            transition = str(metadata.get("transition") or "none")
+            completed = conn.execute(
+                """
+                update rundown_items
+                set state='completed', actual_end=?, actual_duration_seconds=?, updated_at=?
+                where id=? and state='playing'
+                """,
+                (expected_end.isoformat(), expected_seconds, now_iso(), row["id"]),
+            )
+            if completed.rowcount != 1:
+                conn.execute("rollback")
+                return {"completed": False, "reason": "completion_race"}
+
+            occurred_at = expected_end.isoformat()
+
+            def insert_airtime(classification: str, seconds: float, title: str) -> None:
+                if seconds <= 0:
+                    return
+                conn.execute(
+                    """
+                    insert into station_public_events(
+                        event_type, occurred_at, classification, duration_seconds,
+                        program_id, title, metadata_json
+                    ) values ('play.completed', ?, ?, ?, ?, ?, '{}')
+                    """,
+                    (occurred_at, classification, seconds, row["program_id"], title),
+                )
+
+            if transition == "talk_over":
+                talking = min(track_seconds, speech_seconds)
+                insert_airtime("talking", talking, "Radio TED U DJ")
+                insert_airtime("music", max(0.0, track_seconds - talking), row["track_title"])
+            else:
+                insert_airtime("talking", speech_seconds, "Radio TED U DJ")
+                insert_airtime("music", track_seconds, row["track_title"])
+            conn.execute(
+                """
+                insert into play_history (
+                    track_id, program_id, played_at, duration_seconds, source
+                ) values (?, ?, ?, ?, 'local_file')
+                """,
+                (row["track_id"], row["program_id"], occurred_at, track_seconds),
+            )
+            conn.execute(
+                """
+                update tracks
+                set last_played_at=?, play_count=play_count+1, updated_at=?
+                where id=?
+                """,
+                (occurred_at, now_iso(), row["track_id"]),
+            )
+            log_event(
+                conn,
+                "info",
+                f"Completed Liquidsoap rundown item {row['id']}: {row['track_title']} by {row['track_artist']}.",
+                {"program_id": row["program_id"], "transition": transition},
+            )
+            conn.execute("commit")
+        self.playback.now_playing = None
+        self.playback.now_started_at = None
+        return {
+            "completed": True,
+            "rundown_item_id": int(row["id"]),
+            "actual_end": expected_end.isoformat(),
+        }
+
+    @staticmethod
+    def _cue_for_track(track: dict) -> CueMetadata:
+        try:
+            source = CueSource(str(track.get("cue_source") or "none").casefold())
+        except ValueError:
+            source = CueSource.NONE
+        try:
+            intro_end = float(track["intro_end_seconds"])
+            if intro_end <= 0:
+                intro_end = None
+        except (KeyError, TypeError, ValueError):
+            intro_end = None
+        try:
+            confidence = float(track["intro_confidence"])
+            if confidence < 0 or confidence > 1:
+                confidence = None
+        except (KeyError, TypeError, ValueError):
+            confidence = None
+        if intro_end is None:
+            source = CueSource.NONE
+        return CueMetadata(
+            cue_in_seconds=0.0 if intro_end is not None else None,
+            intro_end_seconds=intro_end,
+            intro_confidence=confidence,
+            cue_source=source,
+            immediate_loud_vocal=bool(track.get("immediate_loud_vocal")),
+        )
+
+    def _record_rundown_transition(
+        self,
+        item_id: int,
+        decision,
+        transition: str,
+        cue: CueMetadata,
+    ) -> None:
         with connect(self._database_runtime) as conn:
             cursor = conn.execute(
                 """
@@ -438,12 +630,13 @@ class RadioAgent:
                     to_item_id, transition_kind, cue_source, cue_confidence,
                     speech_start_seconds, speech_end_seconds, duck_db, reason,
                     metadata_json, created_at
-                ) values (?, ?, ?, null, ?, ?, ?, ?, '{}', ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)
                 """,
                 (
                     item_id,
                     transition,
                     decision.cue_source.value,
+                    cue.intro_confidence,
                     decision.speech_start_seconds,
                     decision.speech_end_seconds,
                     decision.duck_db,
@@ -664,22 +857,87 @@ class RadioAgent:
             return "program"
         return "unknown"
 
-    def _consume_ready_announcement(self, program_id: str) -> dict | None:
+    def _consume_ready_announcement_for_candidates(
+        self,
+        program_id: str,
+        candidates: list[dict],
+    ) -> dict | None:
+        candidate_ids = {int(candidate["id"]) for candidate in candidates}
         with connect(self._database_runtime) as conn:
-            row = conn.execute(
+            conn.execute("begin immediate")
+            rows = conn.execute(
                 """
                 select id, text, file_path, metadata_json from announcement_queue
                 where status='ready' and (program_id=? or program_id is null)
                 order by created_at asc, id asc
-                limit 1
                 """,
                 (program_id,),
-            ).fetchone()
-            if row is None:
+            ).fetchall()
+            selected = None
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata_json"] or "{}")
+                except Exception:
+                    metadata = {}
+                announced_track_id = metadata.get("track_id")
+                if announced_track_id is None:
+                    selected = row
+                    break
+                try:
+                    if int(announced_track_id) in candidate_ids:
+                        selected = row
+                        break
+                except (TypeError, ValueError):
+                    continue
+            if selected is None:
+                conn.execute("commit")
                 return None
-            conn.execute("update announcement_queue set status='used', used_at=? where id=?", (now_iso(), row["id"]))
-            conn.commit()
-            return dict(row)
+            conn.execute(
+                "update announcement_queue set status='used', used_at=? where id=? and status='ready'",
+                (now_iso(), selected["id"]),
+            )
+            conn.execute("commit")
+            return dict(selected)
+
+    def _consume_ready_announcement(self, program_id: str, track_id: int) -> dict | None:
+        with connect(self._database_runtime) as conn:
+            conn.execute("begin immediate")
+            rows = conn.execute(
+                """
+                select id, text, file_path, metadata_json from announcement_queue
+                where status='ready' and (program_id=? or program_id is null)
+                order by created_at asc, id asc
+                """,
+                (program_id,),
+            ).fetchall()
+            exact = None
+            generic = None
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata_json"] or "{}")
+                except Exception:
+                    metadata = {}
+                announced_track_id = metadata.get("track_id")
+                if announced_track_id is None:
+                    if generic is None:
+                        generic = row
+                    continue
+                try:
+                    if int(announced_track_id) == int(track_id):
+                        exact = row
+                        break
+                except (TypeError, ValueError):
+                    continue
+            selected = exact or generic
+            if selected is None:
+                conn.execute("commit")
+                return None
+            conn.execute(
+                "update announcement_queue set status='used', used_at=? where id=? and status='ready'",
+                (now_iso(), selected["id"]),
+            )
+            conn.execute("commit")
+            return dict(selected)
 
     def _prebuffer_announcement_text(self, program: dict, index: int, required: int) -> str:
         return (

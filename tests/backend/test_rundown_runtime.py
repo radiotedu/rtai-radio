@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import wave
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from backend.config import Settings
@@ -119,12 +120,14 @@ def test_orchestrator_maintains_one_render_item_then_plays_ready_rundown(
     orchestrator = AutonomousOrchestrator(settings, agent)
     coverage = CoverageStatus(240, 120, 180, False, True)
     render_limits: list[int] = []
+    reconciliations: list[bool] = []
 
     def maintain_rundown(max_render_items: int = 1) -> CoverageStatus:
         render_limits.append(max_render_items)
         return coverage
 
     agent.maintain_rundown = maintain_rundown
+    agent.reconcile_playing_rundown = lambda: reconciliations.append(True) or {"completed": False}
     agent.queue_next_ready_rundown_item = lambda: {"started": True, "item_type": "track"}
     orchestrator._maybe_update_strategy = lambda _track_count: False
 
@@ -133,6 +136,7 @@ def test_orchestrator_maintains_one_render_item_then_plays_ready_rundown(
     assert result["played"] is True
     assert result["coverage"] == asdict(coverage)
     assert render_limits == [1]
+    assert reconciliations == [True]
 
 
 def test_ready_music_plays_when_search_llm_and_qwen_are_unavailable(tmp_path: Path) -> None:
@@ -198,6 +202,152 @@ def test_talkover_render_failure_falls_back_to_speech_then_track(tmp_path: Path)
         "cue_source": "default",
         "duck_db": -11.0,
     }
+
+
+def test_track_specific_announcement_cannot_attach_to_another_track(tmp_path: Path) -> None:
+    settings = runtime_settings(tmp_path)
+    insert_tracks(settings)
+    agent = RadioAgent(settings)
+    agent.maintain_rundown(max_render_items=0)
+    program = current_program(settings)
+    speech_path = tmp_path / "bound-speech.wav"
+    write_wav(speech_path)
+    with connect(settings) as conn:
+        target_track_id = conn.execute(
+            "select track_id from rundown_items where state='ready' order by planned_start, id limit 1"
+        ).fetchone()[0]
+        other_track_id = conn.execute(
+            "select id from tracks where id != ? order by id limit 1",
+            (target_track_id,),
+        ).fetchone()[0]
+        track_ids = [target_track_id, other_track_id]
+        for created_at, track_id in (
+            ("2026-07-05T00:00:00+00:00", track_ids[1]),
+            ("2026-07-05T00:00:01+00:00", track_ids[0]),
+        ):
+            conn.execute(
+                """
+                insert into announcement_queue (
+                    text, file_path, status, program_id, source, created_at, metadata_json
+                ) values ('Prepared track intro', ?, 'ready', ?, 'test', ?, ?)
+                """,
+                (str(speech_path), program["id"], created_at, json.dumps({"track_id": track_id})),
+            )
+        conn.commit()
+    played: list = []
+    drain_without_sleep(agent, played)
+
+    result = agent.queue_next_ready_rundown_item()
+
+    assert result["track_id"] == track_ids[0]
+    with connect(settings) as conn:
+        statuses = {
+            json.loads(row["metadata_json"])["track_id"]: row["status"]
+            for row in conn.execute(
+                "select status, metadata_json from announcement_queue order by id"
+            ).fetchall()
+        }
+    assert statuses[track_ids[0]] == "used"
+    assert statuses[track_ids[1]] == "ready"
+
+
+def test_runtime_uses_curated_track_cue_before_default_window(tmp_path: Path) -> None:
+    settings = runtime_settings(tmp_path)
+    insert_tracks(settings)
+    agent = RadioAgent(settings)
+    agent.maintain_rundown(max_render_items=0)
+    program = current_program(settings)
+    speech_path = tmp_path / "curated-cue-speech.wav"
+    write_wav(speech_path)
+    with connect(settings) as conn:
+        track_id = conn.execute(
+            "select track_id from rundown_items where state='ready' order by planned_start, id limit 1"
+        ).fetchone()[0]
+        conn.execute(
+            "update tracks set cue_source='curated', intro_end_seconds=5.0, intro_confidence=1.0 where id=?",
+            (track_id,),
+        )
+        conn.execute(
+            """
+            insert into announcement_queue (
+                text, file_path, status, program_id, source, created_at, metadata_json
+            ) values ('Prepared curated intro', ?, 'ready', ?, 'test', ?, ?)
+            """,
+            (str(speech_path), program["id"], now_iso(), json.dumps({"track_id": track_id})),
+        )
+        conn.commit()
+
+    class RecordingRenderer:
+        decision = None
+
+        def render(self, _speech, _track, output, decision):
+            self.decision = decision
+            Path(output).parent.mkdir(parents=True, exist_ok=True)
+            Path(output).write_bytes(b"mixed")
+            return Path(output)
+
+    renderer = RecordingRenderer()
+    agent.talkover_renderer = renderer
+    played: list = []
+    drain_without_sleep(agent, played)
+
+    result = agent.queue_next_ready_rundown_item()
+
+    assert result["transition"] == "talk_over"
+    assert renderer.decision.cue_source.value == "curated"
+    with connect(settings) as conn:
+        transition = conn.execute(
+            "select cue_source, cue_confidence from rundown_transitions order by id desc limit 1"
+        ).fetchone()
+    assert dict(transition) == {"cue_source": "curated", "cue_confidence": 1.0}
+
+
+def test_liquidsoap_submission_stays_playing_until_duration_elapses(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import backend.playback as playback_module
+
+    settings = runtime_settings(tmp_path)
+    insert_tracks(settings)
+    agent = RadioAgent(settings)
+    agent.maintain_rundown(max_render_items=0)
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        playback_module,
+        "append_liquidsoap_item",
+        lambda _settings, file_path: submitted.append(file_path),
+    )
+    agent.playback.backend = "liquidsoap"
+
+    first = agent.queue_next_ready_rundown_item()
+    blocked = agent.queue_next_ready_rundown_item()
+    with connect(settings) as conn:
+        state_before = conn.execute(
+            "select state from rundown_items where id=?", (first["rundown_item_id"],)
+        ).fetchone()[0]
+        plays_before = conn.execute("select count(*) from play_history").fetchone()[0]
+
+    assert first["started"] is True
+    assert submitted
+    assert blocked == {"started": False, "reason": "rundown_item_playing"}
+    assert state_before == "playing"
+    assert plays_before == 0
+    assert agent.playback.now_playing is not None
+
+    completed = agent.reconcile_playing_rundown(
+        datetime.now(timezone.utc) + timedelta(minutes=10)
+    )
+    with connect(settings) as conn:
+        state_after = conn.execute(
+            "select state from rundown_items where id=?", (first["rundown_item_id"],)
+        ).fetchone()[0]
+        plays_after = conn.execute("select count(*) from play_history").fetchone()[0]
+
+    assert completed["completed"] is True
+    assert state_after == "completed"
+    assert plays_after == 1
+    assert agent.playback.now_playing is None
 
 
 def test_station_runtime_services_share_the_injected_context(

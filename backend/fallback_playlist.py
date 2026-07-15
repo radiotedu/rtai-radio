@@ -50,6 +50,7 @@ class FallbackPlaylistBuilder:
         return self._database_runtime
 
     def rebuild(self) -> FallbackStatus:
+        had_playlist = self.playlist_path.is_file()
         selected: list[Path] = []
         coverage = 0
         for track in self._eligible_tracks():
@@ -57,6 +58,8 @@ class FallbackPlaylistBuilder:
             coverage += int(float(track["duration_seconds"]))
             if coverage >= self.required_seconds:
                 break
+        if coverage < self.required_seconds and had_playlist:
+            return self.status()
         self.playlist_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.playlist_path.with_suffix(".m3u.tmp")
         temporary.write_text(
@@ -121,4 +124,3 @@ class FallbackPlaylistBuilder:
             required_seconds=self.required_seconds,
             air_ready=coverage_seconds >= self.required_seconds,
         )
-

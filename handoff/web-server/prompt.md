@@ -32,7 +32,7 @@ The website server does not need and must never receive the Icecast source passw
 
 Each EN/FR page contains only:
 
-- stream player;
+- stream player with browser-local play/pause;
 - now playing;
 - current and next program;
 - active website listeners;
@@ -40,6 +40,8 @@ Each EN/FR page contains only:
 - curated editorial sound-character tags.
 
 No admin, contact, message, call, purchase, wallet, reward, voting, social posting, sharing, or playout-control capability may appear in the UI or public OpenAPI. Do not imitate Andon FM branding or layout; retain the original RadioTEDU design and only its clear information hierarchy.
+
+The browser-local play/pause control starts or pauses only the visitor's audio element for the public stream URL. It never issues broadcast, playlist, or Liquidsoap commands, and it must not call any endpoint that changes station state.
 
 The public product may show sanitized coverage summaries supplied by the canonical snapshot, but it must not expose rundown item IDs, queue internals, failure traces, research provenance intended for operators, or any endpoint that can mutate playout.
 

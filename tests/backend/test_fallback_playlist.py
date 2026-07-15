@@ -116,3 +116,16 @@ def test_status_revalidates_playlist_when_a_file_disappears(tmp_path: Path):
     assert rechecked.coverage_seconds == 5 * 3600
     assert rechecked.air_ready is False
 
+
+def test_failed_rebuild_preserves_the_last_valid_six_hour_playlist(
+    tmp_path: Path,
+    monkeypatch,
+):
+    builder = fallback_builder(tmp_path, durations=[3600] * 6)
+    ready = builder.rebuild()
+    previous = ready.playlist_path.read_bytes()
+    monkeypatch.setattr(builder, "_eligible_tracks", lambda: [])
+
+    rebuilt = builder.rebuild()
+
+    assert rebuilt.playlist_path.read_bytes() == previous

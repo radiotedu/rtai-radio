@@ -321,7 +321,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
             agent = RadioAgent(settings)
             use_test_qwen_synthesis(agent)
             readiness = agent.ensure_announcement_prebuffer("night_lab")
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             self.assertIn("Campus observatory opens tonight", row["text"])
@@ -365,7 +366,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
             use_test_qwen_synthesis(agent)
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             metadata = json.loads(row["metadata_json"])
@@ -998,7 +1000,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
             agent.weather_provider = FixedWeatherProvider()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             metadata = json.loads(row["metadata_json"])
@@ -1027,7 +1030,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
             agent.weather_provider = MissingWeatherProvider()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             metadata = json.loads(row["metadata_json"])
@@ -1065,7 +1069,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
                 conn.commit()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             metadata = json.loads(row["metadata_json"])
@@ -1097,7 +1102,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
                 conn.commit()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
-            self.assertTrue(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["ready_to_broadcast"])
+            self.assertFalse(readiness["air_ready"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
                 fact_count = conn.execute("select count(*) from editorial_fact_cards").fetchone()[0]

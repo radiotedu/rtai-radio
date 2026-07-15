@@ -32,7 +32,7 @@ New deployments set `PUBLIC_COMPATIBILITY_ENABLED=false`. If an approved compati
 
 ## Listener page boundary
 
-Pages contain only player, now playing, current/next program, active website listeners, rolling 14-day music/talking percentages, and curated sound-character tags. No playout controls, admin, contact, messaging, calls, purchasing, wallet, rewards, voting, social posting, or sharing is allowed.
+Pages contain only a stream player with browser-local play/pause, now playing, current/next program, active website listeners, rolling 14-day music/talking percentages, and curated sound-character tags. Browser-local play/pause starts or pauses only the visitor's audio element; it never issues broadcast, playlist, or Liquidsoap commands and never mutates station state. No playout controls, admin, contact, messaging, calls, purchasing, wallet, rewards, voting, social posting, or sharing is allowed.
 
 Sanitized coverage may appear only as approved public snapshot fields. Never expose rundown IDs, queue state, retry traces, or a route that mutates station playout.
 

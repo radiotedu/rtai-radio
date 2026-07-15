@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from backend.audio.processing import ProcessingProfile
+from backend.config import Settings
 from backend.liquidsoap import render_liquidsoap_config
 from backend.stations.models import AudioProfile
 
 
-def _settings(tmp_path: Path) -> SimpleNamespace:
-    return SimpleNamespace(
+def _settings(tmp_path: Path) -> Settings:
+    return Settings(
+        database_path=str(tmp_path / "radiotedu.db"),
+        music_dir=str(tmp_path / "music"),
+        static_dir=str(tmp_path / "static"),
         liquidsoap_queue_path=str(tmp_path / "queue.m3u"),
         liquidsoap_script_path=str(tmp_path / "radiotedu.liq"),
         liquidsoap_mount="/radiotedu",

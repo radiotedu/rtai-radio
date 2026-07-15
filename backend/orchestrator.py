@@ -178,6 +178,7 @@ class AutonomousOrchestrator:
             conn.commit()
 
         strategy_updated = self._maybe_update_strategy(track_count)
+        self.agent.reconcile_playing_rundown()
         coverage = self.agent.maintain_rundown(max_render_items=1)
         prebuffer = self.agent.announcement_readiness()
         with connect(self._database_runtime) as conn:
@@ -289,7 +290,7 @@ class AutonomousOrchestrator:
             memory_text = "; ".join(row["content"] for row in memories) or "no listener notes yet"
             policy = self._strategy_policy(track_count, genres, memory_text)
             strategy = (
-                f"RadioTEDU long-horizon strategy rev {revision}: keep one local jazz-first channel, "
+                f"RadioTEDU long-horizon strategy rev {revision}: keep one local pop-first channel with occasional curated jazz and classical, "
                 f"use {track_count} indexed tracks, rotate dayparts by program vibe, and avoid repeating artists too often. "
                 f"Current library signals: {genres}. Listener memory: {memory_text}."
             )
