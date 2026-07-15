@@ -23,13 +23,13 @@ from backend.tts.factory import build_tts_provider
 from backend.weather.open_meteo import OpenMeteoWeatherProvider
 
 
-def make_wav(path: Path) -> None:
+def make_wav(path: Path, duration_seconds: float = 0.1) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(8000)
-        wav.writeframes(b"\x00\x00" * 800)
+        wav.writeframes(b"\x00\x00" * int(8000 * duration_seconds))
 
 
 def use_test_qwen_synthesis(agent) -> None:
@@ -81,6 +81,25 @@ class RadioTEDUCoreTests(unittest.TestCase):
                 self.assertIsNone(financial_table)
                 self.assertIsNotNone(conn.execute("select name from sqlite_master where type='table' and name='public_snapshots'").fetchone())
                 self.assertIsNotNone(conn.execute("select name from sqlite_master where type='table' and name='public_listener_sessions'").fetchone())
+
+    def test_speech_airtime_uses_the_measured_clip_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = self.make_settings(root)
+            clip = root / "tts" / "announcement.wav"
+            make_wav(clip, duration_seconds=3.25)
+            from backend.radio_agent import RadioAgent
+
+            agent = RadioAgent(settings)
+            item = agent._queue_speech("RadioTEDU DJ", str(clip))
+            agent._record_public_airtime(item, "night_lab")
+
+            self.assertAlmostEqual(3.25, item.duration_seconds, places=3)
+            with connect(settings) as conn:
+                duration = conn.execute(
+                    "select duration_seconds from station_public_events where classification='talking'"
+                ).fetchone()[0]
+            self.assertAlmostEqual(3.25, duration, places=3)
 
     def test_empty_library_status_is_idle_setup_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

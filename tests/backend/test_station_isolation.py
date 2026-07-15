@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import wave
 from dataclasses import replace
 from datetime import datetime as RealDateTime
 from pathlib import Path
@@ -20,6 +21,15 @@ from backend.stations.loader import load_station_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATABASE_CHANNEL_ID = "radiotedu"
+
+
+def make_wav(path: Path, duration_seconds: float = 0.25) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b"\x00\x00" * int(16000 * duration_seconds))
 
 
 def contexts(tmp_path: Path) -> dict[str, StationContext]:
@@ -533,6 +543,7 @@ def test_agent_and_orchestrator_database_and_schedule_calls_use_injected_context
             return output_path
 
         def synthesize_request(self, request, output_path):
+            make_wav(Path(output_path))
             return type("SynthesisResult", (), {"output_path": output_path})()
 
     class StubVoicePolicy:

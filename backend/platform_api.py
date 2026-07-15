@@ -436,14 +436,32 @@ def apply_session_operation(settings: Settings, station_id: str, session_id: str
     return {"station_id": station_id, "session_id": session_id, **_session_metrics(settings, station_id)}
 
 
+async def _read_limited_body(request: Request, max_bytes: int) -> bytes | None:
+    """Read an upload incrementally and stop before retaining more than the cap."""
+
+    declared_length = request.headers.get("content-length")
+    if declared_length is not None:
+        try:
+            if int(declared_length) < 0 or int(declared_length) > max_bytes:
+                return None
+        except ValueError:
+            return None
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > max_bytes:
+            return None
+        body.extend(chunk)
+    return bytes(body)
+
+
 def install_platform_routes(app: FastAPI, settings: Settings) -> None:
     init_db(settings)
 
     @app.post("/v1/radio/stations/{station_id}/snapshot", status_code=201)
     async def store_snapshot(station_id: str, request: Request):
         correlation_id = _correlation_id(request)
-        body = await request.body()
-        if len(body) > int(settings.platform_snapshot_max_bytes):
+        body = await _read_limited_body(request, int(settings.platform_snapshot_max_bytes))
+        if body is None:
             return _error(413, "payload_too_large", "snapshot exceeds the allowed size", correlation_id)
         auth, auth_error = _authenticate(settings, request, station_id, body)
         if auth_error is not None:
@@ -514,8 +532,8 @@ def install_platform_routes(app: FastAPI, settings: Settings) -> None:
     @app.post("/v1/radio/stations/{station_id}/plays", status_code=201)
     async def store_play(station_id: str, request: Request):
         correlation_id = _correlation_id(request)
-        body = await request.body()
-        if len(body) > int(settings.platform_snapshot_max_bytes):
+        body = await _read_limited_body(request, int(settings.platform_snapshot_max_bytes))
+        if body is None:
             return _error(413, "payload_too_large", "play event exceeds the allowed size", correlation_id)
         auth, auth_error = _authenticate(settings, request, station_id, body)
         if auth_error is not None:
@@ -574,8 +592,8 @@ def install_platform_routes(app: FastAPI, settings: Settings) -> None:
     @app.put("/v1/radio/stations/{station_id}/covers/{cover_id}", status_code=201)
     async def store_cover(station_id: str, cover_id: str, request: Request):
         correlation_id = _correlation_id(request)
-        body = await request.body()
-        if len(body) > 5 * 1024 * 1024:
+        body = await _read_limited_body(request, 5 * 1024 * 1024)
+        if body is None:
             return _error(413, "payload_too_large", "cover exceeds the allowed size", correlation_id)
         auth, auth_error = _authenticate(settings, request, station_id, body)
         if auth_error is not None:

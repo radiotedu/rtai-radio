@@ -144,6 +144,26 @@ def test_play_events_survive_outage_restart_and_use_full_jitter_backoff(tmp_path
     assert "Sync-Token" not in " ".join(request["headers"])
 
 
+def test_one_missing_station_secret_does_not_disable_the_other_station(tmp_path: Path) -> None:
+    settings = _settings()
+    settings.platform_hmac_secret_fr = ""
+    transport = RecordingTransport()
+    service = PublicSyncService(settings, tmp_path / "public-sync.db", transport=transport, clock=Clock())
+    service.publish_snapshot("radiotedu-fr", _snapshot_state("radiotedu-fr", "Bonjour"))
+    service.publish_snapshot("radiotedu-en", _snapshot_state("radiotedu-en", "Hello"))
+
+    sent = service.flush_once()
+    pending = service.pending_records()
+
+    assert service.configured() is True
+    assert service.station_configured("radiotedu-en") is True
+    assert service.station_configured("radiotedu-fr") is False
+    assert sent["sent"] is True
+    assert sent["station_id"] == "radiotedu-en"
+    assert [record["station_id"] for record in pending] == ["radiotedu-fr"]
+    assert transport.requests[0]["path"] == "/v1/radio/stations/radiotedu-en/snapshot"
+
+
 def test_state_changes_publish_immediately_and_unchanged_state_gets_ten_second_heartbeat(tmp_path: Path) -> None:
     clock = Clock()
     state = {"title": "First"}

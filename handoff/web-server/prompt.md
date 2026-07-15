@@ -51,7 +51,7 @@ Sound tags come only from curated program `vibe` and track `mood` metadata throu
 4. Store the distinct EN and FR HMAC verification secrets in the server secret manager or ACL-protected environment. Never print, log, commit, or paste them into Codex. Do not configure a source password on this machine.
 5. Configure a durable database path and backup/restore procedure for snapshots, play events, covers, idempotency records, nonce replay records, listener sessions, and the last valid station snapshots.
 6. Start the staging service with `python -m backend.public_app` or the equivalent service-manager command. Bind it behind the staging reverse proxy; do not expose `backend.app`.
-7. Configure the main website reverse proxy so `/ai`, `/ai/en`, `/ai/fr`, `/assets`, and versioned API/session paths reach the public app as appropriate. Configure `api.radiotedu.com` for the canonical API.
+7. Configure the main website reverse proxy so `/ai`, `/ai/en`, `/ai/fr`, `/assets`, and versioned API/session paths reach the public app as appropriate. Configure `api.radiotedu.com` for the canonical API. Reject oversized requests at the proxy before forwarding: 256 KiB for snapshots and play events, and 5 MiB for cover uploads; keep the application-level bounded streaming checks enabled as defense in depth.
 8. Configure `stream.radiotedu.com` to terminate valid HTTPS and proxy `/en` and `/fr` to the corresponding private Icecast mounts. Do not expose the Icecast admin interface or source port publicly.
 
 ## Canonical API and security

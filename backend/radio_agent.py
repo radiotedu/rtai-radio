@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import wave
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 from uuid import uuid4
 
@@ -81,8 +83,7 @@ class RadioAgent:
             announcement_label="listener_reply",
             program_id="manual",
         )
-        item = QueueItem("tts", "User message", clip_path, duration_seconds=1.0)
-        self.playback.add(item)
+        item = self._queue_speech("User message", clip_path)
         with connect(self._database_runtime) as conn:
             conn.execute(
                 "insert into generated_clips (clip_type, text, file_path, voice, program_id, created_at) values (?, ?, ?, ?, ?, ?)",
@@ -151,7 +152,7 @@ class RadioAgent:
             announcement_label="listener_reply",
             program_id=program["id"],
         )
-        self.playback.add(QueueItem("tts", "RadioTEDU listener reply", clip_path, duration_seconds=1.0))
+        self._queue_speech("RadioTEDU listener reply", clip_path)
         with connect(self._database_runtime) as conn:
             conn.execute(
                 "insert into generated_clips (clip_type, text, file_path, voice, program_id, created_at) values (?, ?, ?, ?, ?, ?)",
@@ -194,9 +195,9 @@ class RadioAgent:
         if announcement is None:
             dj_line = choice.dj_line if choice else self._line_for_track(selected)
             clip_path = self._narrate(dj_line, program["id"])
-            self.playback.add(QueueItem("tts", "RadioTEDU DJ", clip_path, duration_seconds=1.0))
+            self._queue_speech("RadioTEDU DJ", clip_path)
         else:
-            self.playback.add(QueueItem("tts", "RadioTEDU DJ", announcement["file_path"], duration_seconds=1.0))
+            self._queue_speech("RadioTEDU DJ", announcement["file_path"])
         self.playback.add(
             QueueItem(
                 "track",
@@ -843,6 +844,28 @@ class RadioAgent:
                 (now_iso(), now_iso(), track_id),
             )
             conn.commit()
+
+    @staticmethod
+    def _speech_duration_seconds(file_path: str) -> float:
+        try:
+            with wave.open(str(Path(file_path)), "rb") as clip:
+                frames = clip.getnframes()
+                frame_rate = clip.getframerate()
+        except (OSError, EOFError, wave.Error) as exc:
+            raise RuntimeError("prepared speech clip is not a readable WAV file") from exc
+        if frames <= 0 or frame_rate <= 0:
+            raise RuntimeError("prepared speech clip has no measurable airtime")
+        return frames / float(frame_rate)
+
+    def _queue_speech(self, title: str, file_path: str) -> QueueItem:
+        item = QueueItem(
+            "tts",
+            title,
+            file_path,
+            duration_seconds=self._speech_duration_seconds(file_path),
+        )
+        self.playback.add(item)
+        return item
 
     def _record_public_airtime(self, item: QueueItem, program_id: str | None) -> None:
         if item.item_type in {"tts", "speech", "announcement", "live"}:

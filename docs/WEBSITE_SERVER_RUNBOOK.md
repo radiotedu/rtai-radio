@@ -22,7 +22,7 @@ Canonical endpoints are:
 - `GET /v1/radio/stations/{station_id}/status`
 - station-scoped `/sessions/start`, `/sessions/heartbeat`, and `/sessions/end`
 
-Broadcast writes authenticate as `school-radio-pc` with `agent:playout` and distinct per-station HMAC secrets. Enforce 256 KiB snapshots, `SNAPSHOT_TTL_SECONDS=30`, 60-second skew, nonce replay protection, monotonic sequence, idempotency, constant-time verification, private-field rejection, redacted errors, and correlation IDs.
+Broadcast writes authenticate as `school-radio-pc` with `agent:playout` and distinct per-station HMAC secrets. Enforce 256 KiB snapshots and play events plus 5 MiB covers both at the reverse proxy and in the application's bounded streaming reader. Also enforce `SNAPSHOT_TTL_SECONDS=30`, 60-second skew, nonce replay protection, monotonic sequence, idempotency, constant-time verification, private-field rejection, redacted errors, and correlation IDs.
 
 New deployments set `PUBLIC_COMPATIBILITY_ENABLED=false`. If an approved compatibility window enables the English `/api/public/status` and session adapter, it must read canonical storage and emit deprecation/sunset headers. The legacy shared-token snapshot write is not part of the public app.
 

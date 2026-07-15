@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request as StarletteRequest
 
 from backend.config import Settings
 from backend.platform_api import install_platform_routes, sign_platform_headers
@@ -265,6 +266,34 @@ def test_snapshot_sequence_idempotency_size_and_correlation_contract(tmp_path: P
     assert oversized.json()["error"]["code"] == "payload_too_large"
     for response in (out_of_order, oversized):
         assert response.json()["correlation_id"]
+
+
+def test_chunked_snapshot_is_capped_without_buffering_the_entire_request(tmp_path: Path, monkeypatch) -> None:
+    settings = _settings(tmp_path)
+    settings.platform_snapshot_max_bytes = 16
+    client = _client(settings)
+    path = "/v1/radio/stations/radiotedu-en/snapshot"
+    body = b'{"padding":"' + (b"x" * 64) + b'"}'
+    headers = sign_platform_headers(
+        settings,
+        method="POST",
+        path=path,
+        station_id="radiotedu-en",
+        body=body,
+        timestamp=str(int(time.time())),
+        nonce=uuid.uuid4().hex,
+        idempotency_key=uuid.uuid4().hex,
+        correlation_id=str(uuid.uuid4()),
+    )
+
+    async def forbidden_body(_request):
+        raise AssertionError("platform uploads must use the bounded streaming reader")
+
+    monkeypatch.setattr(StarletteRequest, "body", forbidden_body)
+    response = client.post(path, content=iter((body[:8], body[8:24], body[24:])), headers=headers)
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
 
 
 def test_public_openapi_has_status_only_and_no_remote_playout_or_engagement_capabilities(tmp_path: Path) -> None:

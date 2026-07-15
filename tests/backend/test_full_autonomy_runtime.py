@@ -878,8 +878,7 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             agent = RadioAgent(settings)
             force_night_lab(settings)
             ready_clip = settings.tts_path / "ready.wav"
-            ready_clip.parent.mkdir(parents=True, exist_ok=True)
-            ready_clip.write_bytes(b"RIFF0000WAVE")
+            make_wav(ready_clip)
             with connect(settings) as conn:
                 conn.execute(
                     "insert into announcement_queue (text, file_path, status, program_id, source, created_at, metadata_json) values (?, ?, ?, ?, ?, ?, ?)",
@@ -925,8 +924,7 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             agent = RadioAgent(settings)
             force_night_lab(settings)
             ready_clip = settings.tts_path / "ben_ready.wav"
-            ready_clip.parent.mkdir(parents=True, exist_ok=True)
-            ready_clip.write_bytes(b"RIFF0000WAVE")
+            make_wav(ready_clip)
             with connect(settings) as conn:
                 ben = conn.execute("select id, title, artist from tracks where artist='Ben'").fetchone()
                 metadata = {

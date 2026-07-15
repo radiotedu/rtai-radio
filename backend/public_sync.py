@@ -216,9 +216,15 @@ class PublicSyncService:
             self.settings.public_sync_url
             and self.settings.platform_agent_id == "school-radio-pc"
             and self.settings.platform_agent_scope == "agent:playout"
-            and self.settings.platform_hmac_secret_en
-            and self.settings.platform_hmac_secret_fr
+            and any(self.station_configured(station_id) for station_id in self.station_ids)
         )
+
+    def station_configured(self, station_id: str) -> bool:
+        if station_id not in STATIONS:
+            raise ValueError("unsupported station")
+        if station_id == "radiotedu-en":
+            return bool(self.settings.platform_hmac_secret_en)
+        return bool(self.settings.platform_hmac_secret_fr)
 
     def publish_snapshot(self, station_id: str, state: dict) -> dict:
         if station_id not in STATIONS:
@@ -501,15 +507,20 @@ class PublicSyncService:
             self.last_result = {"sent": False, "reason": "not_configured"}
             return self.last_result
         now = self.clock()
+        configured_stations = tuple(
+            station_id for station_id in self.station_ids if self.station_configured(station_id)
+        )
+        placeholders = ",".join("?" for _ in configured_stations)
         with self._connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 select * from sync_outbox
                 where status='pending' and next_attempt_at<=?
+                  and station_id in ({placeholders})
                 order by case kind when 'play' then 0 when 'cover' then 1 else 2 end, created_at, id
                 limit 1
                 """,
-                (now,),
+                (now, *configured_stations),
             ).fetchone()
         if row is None:
             self.last_result = {"sent": False, "reason": "empty"}
@@ -615,6 +626,10 @@ class PublicSyncService:
             "outbound_only": True,
             "can_control_playout": False,
             "stations": list(self.station_ids),
+            "station_configuration": {
+                station_id: {"configured": self.station_configured(station_id)}
+                for station_id in self.station_ids
+            },
             "pending": pending,
             "last_result": self.last_result,
             "heartbeat_seconds": 10,
