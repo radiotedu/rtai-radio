@@ -14,7 +14,7 @@ from .scheduler import current_program
 from .search.rss import RSSSearchProvider
 from .search.searxng import SearXNGSearchProvider
 from .stations.context import StationContext, coerce_station_context
-from .tts.contracts import AnnouncementLabel, SynthesisRequest
+from .tts.contracts import AnnouncementLabel, QwenUnavailableError, SynthesisRequest
 from .tts.factory import build_tts_provider
 from .tts.voice_policy import VoicePolicy
 from .weather.open_meteo import OpenMeteoWeatherProvider
@@ -304,12 +304,33 @@ class RadioAgent:
             filename = f"prebuffer_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.wav"
             output = self.settings.tts_path / filename
             voice = self.tts.provider_name
-            clip_path = self._synthesize_qwen(
-                text,
-                output,
-                announcement_label="track_intro",
-                program_id=target_program_id,
-            )
+            try:
+                clip_path = self._synthesize_qwen(
+                    text,
+                    output,
+                    announcement_label="track_intro",
+                    program_id=target_program_id,
+                )
+            except (QwenUnavailableError, ValueError, OSError) as exc:
+                failure_metadata = dict(metadata)
+                failure_metadata["failure_code"] = type(exc).__name__
+                with connect(self._database_runtime) as conn:
+                    conn.execute(
+                        """
+                        insert into announcement_queue (
+                            text, file_path, status, program_id, source, created_at, metadata_json
+                        ) values (?, '', 'failed', ?, 'agent_prebuffer', ?, ?)
+                        """,
+                        (
+                            text,
+                            target_program_id,
+                            now_iso(),
+                            json.dumps(failure_metadata, ensure_ascii=True),
+                        ),
+                    )
+                    conn.commit()
+                readiness = self.announcement_readiness(program_id)
+                break
             with connect(self._database_runtime) as conn:
                 if track_id is not None and self._ready_track_exists(conn, program_id or program["id"], int(track_id)):
                     conn.commit()

@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.config import Settings
 from backend.database import connect, init_db
@@ -20,7 +21,18 @@ def make_wav(path: Path) -> None:
         wav.writeframes(b"\x00\x00" * 800)
 
 
+def fake_qwen_synthesis(_agent, _text, output_path, **_kwargs) -> str:
+    output = Path(output_path)
+    make_wav(output)
+    return str(output)
+
+
 class AutonomousOrchestratorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = patch.object(RadioAgent, "_synthesize_qwen", fake_qwen_synthesis)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def make_settings(self, root: Path) -> Settings:
         return Settings(
             database_path=str(root / "radiotedu.db"),

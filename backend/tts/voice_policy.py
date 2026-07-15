@@ -34,6 +34,12 @@ class VoicePolicy:
         hosts = pack.get("hosts") or []
         if len(hosts) != 4:
             raise ValueError("a frozen station voice pack must contain four hosts")
+        for host in hosts:
+            host_id = str(host.get("host_id") or "unknown")
+            for field in ("clone_prompt_path", "reference_audio_path", "reference_transcript"):
+                value = host.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"host {host_id} missing {field}")
         self.hosts = {daypart: host for host in hosts for daypart in host["dayparts"]}
 
     @classmethod

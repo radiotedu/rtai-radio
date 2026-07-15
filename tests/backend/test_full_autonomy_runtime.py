@@ -18,6 +18,8 @@ from backend.ollama_setup import check_ollama_setup, repair_ollama_runtime
 from backend.orchestrator import AutonomousOrchestrator
 from backend.playback import PlaybackController, QueueItem
 from backend.radio_agent import RadioAgent
+from backend.stations.context import coerce_station_context
+from backend.tts.contracts import QwenUnavailableError
 from backend.tts.qwen_tts import QwenTTSProvider
 from backend.tts.sapi_tts import SapiTTSProvider
 
@@ -38,6 +40,12 @@ def make_wav(path: Path) -> None:
         audio.setsampwidth(2)
         audio.setframerate(8000)
         audio.writeframes(b"\x00\x00" * 800)
+
+
+def fake_qwen_synthesis(_agent, _text, output_path, **_kwargs) -> str:
+    output = Path(output_path)
+    make_wav(output)
+    return str(output)
 
 
 def make_settings(root: Path) -> Settings:
@@ -63,6 +71,11 @@ def force_night_lab(settings: Settings) -> None:
 
 
 class FullAutonomyRuntimeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = patch.object(RadioAgent, "_synthesize_qwen", fake_qwen_synthesis)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_sapi_tts_provider_writes_real_wav_and_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "voice.wav"
@@ -76,14 +89,15 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
                 output.with_suffix(".txt").read_text(encoding="utf-8"),
             )
 
-    def test_radio_agent_uses_sapi_when_qwen_command_is_missing(self) -> None:
+    def test_radio_agent_never_uses_configured_sapi_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
             settings.tts_provider = "qwen"
             settings.qwen_tts_command = ""
             settings.fallback_tts_provider = "sapi"
             agent = RadioAgent(settings)
-            self.assertEqual("sapi", agent.tts.provider_name)
+            self.assertEqual("qwen", agent.tts.provider_name)
+            self.assertFalse(hasattr(agent.tts, "fallback"))
 
     def test_listener_messages_api_returns_sanitized_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -139,9 +153,16 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         specs = module.build_process_specs(Path("F:/RTAI/RadioTEDU"), start_frontend=True)
-        self.assertEqual(["backend", "frontend"], [item.name for item in specs])
-        self.assertEqual(["python", "-m", "backend.app"], specs[0].args)
-        self.assertIn("npm.cmd", specs[1].args[0])
+        self.assertEqual(
+            ["backend-radiotedu-en", "backend-radiotedu-fr", "frontend-development-only"],
+            [item.name for item in specs],
+        )
+        self.assertTrue(specs[0].args[0].lower().endswith("python.exe"))
+        self.assertEqual(
+            ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", "8765"],
+            specs[0].args[1:],
+        )
+        self.assertIn("npm.cmd", specs[2].args[0])
         self.assertFalse(module.backend_health_due(started_at=100.0, now=110.0, grace_seconds=30))
         self.assertTrue(module.backend_health_due(started_at=100.0, now=131.0, grace_seconds=30))
 
@@ -992,24 +1013,39 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             self.assertIn("uptime_seconds", payload["observability"])
             self.assertIn("recent_errors", payload["observability"])
 
-    def test_env_binds_qwen_wrapper_command(self) -> None:
-        env_text = (Path(__file__).resolve().parents[2] / ".env").read_text(encoding="utf-8")
-        self.assertIn("QWEN_TTS_COMMAND=python scripts/qwen_tts_command.py --text {text} --out {output_path} --voice {voice}", env_text)
+    def test_env_binds_local_qwen_service_without_fallback(self) -> None:
+        env_text = (Path(__file__).resolve().parents[2] / ".env.example").read_text(encoding="utf-8")
+        self.assertIn("QWEN_TTS_SERVICE_URL=http://127.0.0.1:8090", env_text)
+        self.assertNotIn("FALLBACK_TTS_PROVIDER", env_text)
 
-    def test_qwen_command_preserves_text_with_spaces_on_windows_shell(self) -> None:
+    def test_qwen_provider_rejects_legacy_shell_command_transport(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            script = root / "capture_tts.py"
-            script.write_text(
-                "import argparse, pathlib\n"
-                "p=argparse.ArgumentParser(); p.add_argument('--text'); p.add_argument('--out'); p.add_argument('--voice', default='')\n"
-                "a=p.parse_args(); pathlib.Path(a.out).write_bytes(b'RIFF0000WAVE'); pathlib.Path(a.out).with_suffix('.captured').write_text(a.text, encoding='utf-8')\n",
-                encoding="utf-8",
-            )
-            output = root / "voice.wav"
-            provider = QwenTTSProvider(f"python {script} --text {{text}} --out {{output_path}} --voice {{voice}}")
-            provider.synthesize("RadioTEDU hazır anons 1 / 5", str(output))
-            self.assertEqual("RadioTEDU hazır anons 1 / 5", output.with_suffix(".captured").read_text(encoding="utf-8"))
+            context = coerce_station_context(make_settings(root))
+            with self.assertRaisesRegex(ValueError, "loopback HTTP"):
+                QwenTTSProvider(context, "python scripts/qwen_tts_command.py")
+
+    def test_qwen_failure_marks_prebuffer_failed_without_crashing_playout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root)
+            settings.min_ready_announcements = 1
+            settings.max_ready_announcements = 1
+            make_wav(root / "music" / "Alice - Blue Room.wav")
+            scan_music(settings)
+            force_night_lab(settings)
+            agent = RadioAgent(settings)
+
+            with patch.object(
+                RadioAgent,
+                "_synthesize_qwen",
+                side_effect=QwenUnavailableError("voice pack unavailable"),
+            ):
+                readiness = agent.ensure_announcement_prebuffer("night_lab")
+
+            self.assertEqual(0, readiness["ready"])
+            self.assertEqual(1, readiness["failed"])
+            self.assertFalse(readiness["ready_to_broadcast"])
 
 
 if __name__ == "__main__":

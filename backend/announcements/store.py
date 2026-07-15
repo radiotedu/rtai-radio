@@ -222,7 +222,7 @@ class AnnouncementJobStore:
                 where announcement_jobs.job_id = announcement_job_events.job_id
                   and announcement_jobs.station_id = ?
             )
-            order by occurred_at, event_id
+            order by occurred_at, announcement_job_events.rowid
             """,
             (job_id, station_id),
         ).fetchall()

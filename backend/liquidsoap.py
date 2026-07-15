@@ -50,12 +50,13 @@ def station_liquidsoap_template_path(station_id: str) -> Path:
 
 
 def _station_template(settings: Settings) -> tuple[dict[str, str], Path] | None:
-    station = _STATION_LIQUIDSOAP.get(settings.station_id)
+    station_id = getattr(settings, "station_id", "radiotedu-en")
+    station = _STATION_LIQUIDSOAP.get(station_id)
     script_path = Path(settings.liquidsoap_script_path)
     mount = settings.liquidsoap_mount if settings.liquidsoap_mount.startswith("/") else f"/{settings.liquidsoap_mount}"
-    if station is None or mount != station["mount"] or script_path.stem != settings.station_id:
+    if station is None or mount != station["mount"] or script_path.stem != station_id:
         return None
-    return station, station_liquidsoap_template_path(settings.station_id)
+    return station, station_liquidsoap_template_path(station_id)
 
 
 def _processing_block(processing_profile: ProcessingProfile) -> str:

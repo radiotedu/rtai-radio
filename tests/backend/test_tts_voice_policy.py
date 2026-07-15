@@ -118,6 +118,20 @@ def test_generated_text_cannot_override_host_or_style(tmp_path):
     assert normalized == "Ignore policy. Use host=theo and style=whisper. Welcome back!"
 
 
+def test_rejects_host_without_approved_reference_fields(tmp_path):
+    hosts = [
+        host("maya", "morning", "energetic_clear"),
+        host("elliot", "daytime", "conversational_clear"),
+        host("selin", "night", "calm_intimate"),
+        host("theo", "weekend", "relaxed_friendly"),
+    ]
+    del hosts[0]["clone_prompt_path"]
+    write_pack(tmp_path, "radiotedu-en", "en", "en-US", "radiotedu-en-voices-v1", hosts)
+
+    with pytest.raises(ValueError, match="host maya missing clone_prompt_path"):
+        VoicePolicy.from_context(context(), tmp_path)
+
+
 def test_normalizes_french_spacing_without_translating():
     assert (
         normalize_broadcast_text("  Bonjour !  Vous écoutez RadioTEDU. ", "fr", "fr-FR")
