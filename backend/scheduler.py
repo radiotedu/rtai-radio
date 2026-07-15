@@ -32,7 +32,15 @@ def _programs_from_db(runtime: Settings | StationContext) -> list[dict]:
             select id, name, description, vibe, start_time, end_time, days_of_week, cover_path, active
             from programs
             where channel_id=? and active=1
-            order by start_time
+            order by case id
+                when 'morning_signal' then 0
+                when 'campus_frequencies' then 1
+                when 'night_lab' then 2
+                when 'weekend_transmission' then 3
+                when 'overnight_signal' then 4
+                when 'weekend_overnight' then 5
+                else 99
+            end, start_time
             """,
             (DATABASE_CHANNEL_ID,),
         ).fetchall()

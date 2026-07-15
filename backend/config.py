@@ -67,6 +67,10 @@ class Settings:
     strategy_interval_minutes: int = 240
     min_ready_announcements: int = 5
     max_ready_announcements: int = 8
+    rundown_planned_seconds: int = 14_400
+    rundown_rendered_seconds: int = 3_600
+    rundown_refill_seconds: int = 7_200
+    fallback_coverage_seconds: int = 21_600
     liquidsoap_enabled: bool = False
     liquidsoap_queue_path: str = "data/liquidsoap/queue.m3u"
     liquidsoap_script_path: str = "data/liquidsoap/radiotedu.liq"
@@ -102,6 +106,17 @@ class Settings:
             raise ValueError("station_id must be radiotedu-en or radiotedu-fr")
         if self.liquidsoap_encoder_profile != "aac_192":
             raise ValueError("liquidsoap_encoder_profile must be aac_192")
+        if min(
+            self.rundown_planned_seconds,
+            self.rundown_rendered_seconds,
+            self.rundown_refill_seconds,
+            self.fallback_coverage_seconds,
+        ) <= 0:
+            raise ValueError("rundown and fallback coverage seconds must be positive")
+        if self.rundown_rendered_seconds > self.rundown_planned_seconds:
+            raise ValueError("rendered rundown coverage cannot exceed planned coverage")
+        if self.rundown_refill_seconds > self.rundown_planned_seconds:
+            raise ValueError("rundown refill threshold cannot exceed planned coverage")
 
     @classmethod
     def from_env(cls, env_path: str | Path = ".env") -> "Settings":
@@ -144,6 +159,10 @@ class Settings:
             "strategy_interval_minutes": "STRATEGY_INTERVAL_MINUTES",
             "min_ready_announcements": "MIN_READY_ANNOUNCEMENTS",
             "max_ready_announcements": "MAX_READY_ANNOUNCEMENTS",
+            "rundown_planned_seconds": "RUNDOWN_PLANNED_SECONDS",
+            "rundown_rendered_seconds": "RUNDOWN_RENDERED_SECONDS",
+            "rundown_refill_seconds": "RUNDOWN_REFILL_SECONDS",
+            "fallback_coverage_seconds": "FALLBACK_COVERAGE_SECONDS",
             "liquidsoap_enabled": "LIQUIDSOAP_ENABLED",
             "liquidsoap_queue_path": "LIQUIDSOAP_QUEUE_PATH",
             "liquidsoap_script_path": "LIQUIDSOAP_SCRIPT_PATH",

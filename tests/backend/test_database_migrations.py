@@ -117,6 +117,48 @@ def test_editorial_fact_card_migration_is_versioned_and_constrained(tmp_path: Pa
     assert indexes
 
 
+def test_rundown_migration_is_versioned_with_durable_transition_tables(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    database.init_db(settings)
+
+    with database.connect(settings) as conn:
+        checkpoint = conn.execute(
+            "select name from schema_migrations where version=8"
+        ).fetchone()
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "select name from sqlite_master where type='table'"
+            )
+        }
+        rundown_columns = {
+            row["name"] for row in conn.execute("pragma table_info(rundown_items)")
+        }
+
+    assert tuple(checkpoint) == ("create_durable_rundowns",)
+    assert {"rundown_items", "rundown_transitions", "liner_template_usage"} <= tables
+    assert {
+        "station_id",
+        "planned_start",
+        "planned_end",
+        "actual_start",
+        "actual_end",
+        "measured_duration_seconds",
+        "item_type",
+        "track_id",
+        "program_id",
+        "state",
+        "source_path",
+        "rendered_path",
+        "editorial_kind",
+        "fact_card_id",
+        "template_id",
+        "transition_id",
+        "attempts",
+        "error_code",
+    } <= rundown_columns
+
+
 def test_migrations_are_applied_in_version_order() -> None:
     Migration, _, apply_migrations = migration_api()
     with sqlite3.connect(":memory:") as conn:

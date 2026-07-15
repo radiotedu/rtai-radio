@@ -3,7 +3,7 @@ import subprocess
 import sys
 import wave
 from dataclasses import replace
-from datetime import datetime as RealDateTime
+from datetime import datetime as RealDateTime, timezone
 from pathlib import Path
 from unittest.mock import PropertyMock
 
@@ -15,6 +15,7 @@ import backend.scheduler as scheduler_module
 from backend.config import Settings
 from backend.database import connect, init_db
 from backend.scheduler import current_program, next_programs
+from backend.rundown import RundownPlanner
 from backend.stations.context import StationContext, build_station_context
 from backend.stations.loader import load_station_profiles
 
@@ -87,6 +88,49 @@ def test_station_databases_do_not_share_program_state(tmp_path: Path, monkeypatc
     assert english_events == ["english-only-event"]
     assert french_events == ["french-only-event"]
     assert stations["radiotedu-en"].database_file != stations["radiotedu-fr"].database_file
+
+
+def test_rundown_planners_write_only_their_station_database(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    stations = contexts(tmp_path)
+    timestamp = "2026-07-13T09:00:00+00:00"
+    for station_id, context in stations.items():
+        init_db(context)
+        track_path = context.music_root / f"{station_id}.wav"
+        make_wav(track_path, duration_seconds=1800)
+        with connect(context) as conn:
+            conn.execute(
+                """
+                insert into tracks (
+                    title, artist, genre, duration_seconds, file_path,
+                    play_count, created_at, updated_at
+                ) values (?, ?, 'pop', 1800, ?, 0, ?, ?)
+                """,
+                (f"{station_id} track", "RadioTEDU", str(track_path), timestamp, timestamp),
+            )
+            conn.commit()
+
+    english = RundownPlanner(
+        stations["radiotedu-en"], fallback_seconds_provider=lambda: 21_600
+    )
+    french = RundownPlanner(
+        stations["radiotedu-fr"], fallback_seconds_provider=lambda: 21_600
+    )
+    now = RealDateTime(2026, 7, 13, 9, 0, tzinfo=timezone.utc)
+
+    english.maintain(now)
+
+    with connect(stations["radiotedu-en"]) as conn:
+        english_count = conn.execute("select count(*) from rundown_items").fetchone()[0]
+    with connect(stations["radiotedu-fr"]) as conn:
+        french_before = conn.execute("select count(*) from rundown_items").fetchone()[0]
+    french.maintain(now)
+    with connect(stations["radiotedu-fr"]) as conn:
+        french_after = conn.execute("select count(*) from rundown_items").fetchone()[0]
+
+    assert english_count > 0
+    assert french_before == 0
+    assert french_after > 0
 
 
 def test_connect_rejects_cross_station_database_path_before_sqlite(tmp_path: Path, monkeypatch) -> None:

@@ -88,7 +88,7 @@ PROGRAMS = [
         "voice": "tr_female_warm",
         "personality": "warm, optimistic, concise, gently energetic",
         "start_time": "06:00",
-        "end_time": "10:00",
+        "end_time": "09:59",
         "days_of_week": "mon,tue,wed,thu,fri",
         "cover_path": "/static/generated/covers/morning_signal.png",
     },
@@ -102,7 +102,7 @@ PROGRAMS = [
         "voice": "tr_male_clear",
         "personality": "calm, precise, curious, lightly academic",
         "start_time": "10:00",
-        "end_time": "18:00",
+        "end_time": "17:59",
         "days_of_week": "mon,tue,wed,thu,fri",
         "cover_path": "/static/generated/covers/campus_frequencies.png",
     },
@@ -130,7 +130,7 @@ PROGRAMS = [
         "voice": "tr_male_late",
         "personality": "easygoing, warm, conversational, weekend-minded",
         "start_time": "08:00",
-        "end_time": "18:00",
+        "end_time": "17:59",
         "days_of_week": "sat,sun",
         "cover_path": "/static/generated/covers/weekend_transmission.png",
     },
@@ -144,7 +144,7 @@ PROGRAMS = [
         "voice": "tr_female_warm",
         "personality": "warm, concise, reassuring, music-first",
         "start_time": "00:00",
-        "end_time": "06:00",
+        "end_time": "05:59",
         "days_of_week": "mon,tue,wed,thu,fri",
         "cover_path": "/static/generated/covers/overnight_signal.png",
     },
@@ -158,7 +158,7 @@ PROGRAMS = [
         "voice": "tr_male_late",
         "personality": "easygoing, warm, conversational, music-first",
         "start_time": "00:00",
-        "end_time": "08:00",
+        "end_time": "07:59",
         "days_of_week": "sat,sun",
         "cover_path": "/static/generated/covers/weekend_overnight.png",
     },
@@ -932,6 +932,72 @@ create index if not exists idx_editorial_fact_cards_track_language
 """
 
 
+RUNDOWN_SCHEMA = """
+create table if not exists rundown_items (
+    id integer primary key autoincrement,
+    station_id text not null check(station_id in ('radiotedu-en', 'radiotedu-fr')),
+    planned_start text not null,
+    planned_end text not null,
+    actual_start text,
+    actual_end text,
+    measured_duration_seconds real not null check(measured_duration_seconds > 0),
+    actual_duration_seconds real,
+    item_type text not null check(item_type in ('music_track', 'speech', 'imaging', 'talkover_composite', 'fallback')),
+    track_id integer references tracks(id),
+    program_id text references programs(id),
+    state text not null check(state in ('planned', 'researching', 'rendering', 'ready', 'queued', 'playing', 'completed', 'failed', 'skipped', 'stale')),
+    source_path text not null,
+    rendered_path text,
+    editorial_kind text,
+    fact_card_id integer references editorial_fact_cards(id),
+    template_id text,
+    transition_id integer,
+    attempts integer not null default 0 check(attempts >= 0),
+    error_code text,
+    queued_at text,
+    metadata_json text not null default '{}',
+    created_at text not null,
+    updated_at text not null,
+    check(planned_end > planned_start)
+);
+
+create table if not exists rundown_transitions (
+    id integer primary key autoincrement,
+    from_item_id integer references rundown_items(id),
+    to_item_id integer not null references rundown_items(id),
+    transition_kind text not null,
+    cue_source text,
+    cue_confidence real,
+    speech_start_seconds real,
+    speech_end_seconds real,
+    duck_db real,
+    reason text not null,
+    metadata_json text not null default '{}',
+    created_at text not null
+);
+
+create table if not exists liner_template_usage (
+    id integer primary key autoincrement,
+    station_id text not null check(station_id in ('radiotedu-en', 'radiotedu-fr')),
+    template_id text not null,
+    language text not null check(language in ('en', 'fr')),
+    track_id integer references tracks(id),
+    program_id text references programs(id),
+    rundown_item_id integer references rundown_items(id),
+    used_at text not null,
+    unique(station_id, template_id, rundown_item_id)
+);
+
+create unique index if not exists uq_rundown_active_track_start
+    on rundown_items(track_id, planned_start)
+    where track_id is not null and state in ('planned', 'researching', 'rendering', 'ready', 'queued', 'playing');
+create index if not exists idx_rundown_state_start on rundown_items(state, planned_start);
+create index if not exists idx_rundown_station_start on rundown_items(station_id, planned_start);
+create index if not exists idx_rundown_transition_to on rundown_transitions(to_item_id);
+create index if not exists idx_liner_template_usage_recent on liner_template_usage(station_id, used_at desc);
+"""
+
+
 DEFAULT_MIGRATIONS = (
     Migration(
         1,
@@ -983,5 +1049,12 @@ DEFAULT_MIGRATIONS = (
         EDITORIAL_FACT_CARD_SCHEMA,
         required_columns=_schema_column_requirements(EDITORIAL_FACT_CARD_SCHEMA),
         schema_contract=_schema_contract(EDITORIAL_FACT_CARD_SCHEMA),
+    ),
+    Migration(
+        8,
+        "create_durable_rundowns",
+        RUNDOWN_SCHEMA,
+        required_columns=_schema_column_requirements(RUNDOWN_SCHEMA),
+        schema_contract=_schema_contract(RUNDOWN_SCHEMA),
     ),
 )
