@@ -377,6 +377,65 @@ def _airtime_metrics(settings: Settings, station_id: str) -> dict[str, int | Non
     }
 
 
+def station_status_payload(settings: Settings, station_id: str):
+    """Read the canonical public status shared by v1 and the legacy EN adapter."""
+    if station_id not in STATIONS:
+        return _error(404, "unknown_station", "station is not available", str(uuid.uuid4()))
+    with connect(settings) as conn:
+        row = conn.execute(
+            "select sequence, received_at, payload_json from public_station_snapshots where station_id=?",
+            (station_id,),
+        ).fetchone()
+    snapshot = json.loads(row["payload_json"]) if row is not None else None
+    received_at = row["received_at"] if row is not None else None
+    fresh = False
+    if received_at:
+        try:
+            received = datetime.fromisoformat(received_at)
+            fresh = datetime.now(timezone.utc) - received <= timedelta(seconds=settings.snapshot_ttl_seconds)
+        except (TypeError, ValueError):
+            fresh = False
+    metrics = _session_metrics(settings, station_id)
+    metrics["airtime"] = _airtime_metrics(settings, station_id)
+    return {
+        "protocol": PROTOCOL,
+        "station_id": station_id,
+        "online": bool(snapshot is not None and fresh),
+        "stale": bool(snapshot is not None and not fresh),
+        "received_at": received_at,
+        "snapshot": snapshot,
+        "metrics": metrics,
+    }
+
+
+def apply_session_operation(settings: Settings, station_id: str, session_id: str, operation: str):
+    """Store station-scoped listener presence without IP or browser identity."""
+    if station_id not in STATIONS:
+        return _error(404, "unknown_station", "station is not available", str(uuid.uuid4()))
+    if not _SAFE_SESSION_ID.fullmatch(session_id):
+        return _error(422, "invalid_session", "session identifier is invalid", str(uuid.uuid4()))
+    timestamp = now_iso()
+    with connect(settings) as conn:
+        if operation == "end":
+            conn.execute(
+                "update public_station_sessions set last_seen_at=?, ended_at=? where station_id=? and session_id=?",
+                (timestamp, timestamp, station_id, session_id),
+            )
+        else:
+            conn.execute(
+                """
+                insert into public_station_sessions(station_id, session_id, started_at, last_seen_at, ended_at)
+                values (?, ?, ?, ?, null)
+                on conflict(station_id, session_id) do update set
+                    last_seen_at=excluded.last_seen_at,
+                    ended_at=null
+                """,
+                (station_id, session_id, timestamp, timestamp),
+            )
+        conn.commit()
+    return {"station_id": station_id, "session_id": session_id, **_session_metrics(settings, station_id)}
+
+
 def install_platform_routes(app: FastAPI, settings: Settings) -> None:
     init_db(settings)
 
@@ -576,68 +635,16 @@ def install_platform_routes(app: FastAPI, settings: Settings) -> None:
 
     @app.get("/v1/radio/stations/{station_id}/status")
     def station_status(station_id: str):
-        if station_id not in STATIONS:
-            return _error(404, "unknown_station", "station is not available", str(uuid.uuid4()))
-        with connect(settings) as conn:
-            row = conn.execute(
-                "select sequence, received_at, payload_json from public_station_snapshots where station_id=?",
-                (station_id,),
-            ).fetchone()
-        snapshot = json.loads(row["payload_json"]) if row is not None else None
-        received_at = row["received_at"] if row is not None else None
-        fresh = False
-        if received_at:
-            try:
-                received = datetime.fromisoformat(received_at)
-                fresh = datetime.now(timezone.utc) - received <= timedelta(seconds=settings.snapshot_ttl_seconds)
-            except (TypeError, ValueError):
-                fresh = False
-        metrics = _session_metrics(settings, station_id)
-        metrics["airtime"] = _airtime_metrics(settings, station_id)
-        return {
-            "protocol": PROTOCOL,
-            "station_id": station_id,
-            "online": bool(snapshot is not None and fresh),
-            "stale": bool(snapshot is not None and not fresh),
-            "received_at": received_at,
-            "snapshot": snapshot,
-            "metrics": metrics,
-        }
-
-    def session_operation(station_id: str, session: PublicSession, operation: str):
-        if station_id not in STATIONS:
-            return _error(404, "unknown_station", "station is not available", str(uuid.uuid4()))
-        if not _SAFE_SESSION_ID.fullmatch(session.session_id):
-            return _error(422, "invalid_session", "session identifier is invalid", str(uuid.uuid4()))
-        timestamp = now_iso()
-        with connect(settings) as conn:
-            if operation == "end":
-                conn.execute(
-                    "update public_station_sessions set last_seen_at=?, ended_at=? where station_id=? and session_id=?",
-                    (timestamp, timestamp, station_id, session.session_id),
-                )
-            else:
-                conn.execute(
-                    """
-                    insert into public_station_sessions(station_id, session_id, started_at, last_seen_at, ended_at)
-                    values (?, ?, ?, ?, null)
-                    on conflict(station_id, session_id) do update set
-                        last_seen_at=excluded.last_seen_at,
-                        ended_at=null
-                    """,
-                    (station_id, session.session_id, timestamp, timestamp),
-                )
-            conn.commit()
-        return {"station_id": station_id, "session_id": session.session_id, **_session_metrics(settings, station_id)}
+        return station_status_payload(settings, station_id)
 
     @app.post("/v1/radio/stations/{station_id}/sessions/start")
     def session_start(station_id: str, session: PublicSession):
-        return session_operation(station_id, session, "start")
+        return apply_session_operation(settings, station_id, session.session_id, "start")
 
     @app.post("/v1/radio/stations/{station_id}/sessions/heartbeat")
     def session_heartbeat(station_id: str, session: PublicSession):
-        return session_operation(station_id, session, "heartbeat")
+        return apply_session_operation(settings, station_id, session.session_id, "heartbeat")
 
     @app.post("/v1/radio/stations/{station_id}/sessions/end")
     def session_end(station_id: str, session: PublicSession):
-        return session_operation(station_id, session, "end")
+        return apply_session_operation(settings, station_id, session.session_id, "end")

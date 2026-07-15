@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Dashboard } from '../components/Dashboard';
 import { PublicDashboard } from '../components/PublicDashboard';
-import type { PublicStatusResponse, StatusResponse } from '../api';
+import type { PublicStatusResponse, StationPublicStatusResponse, StatusResponse } from '../api';
 
 const emptyStatus: StatusResponse = {
   channel: {
@@ -669,70 +669,122 @@ const publicStatus: PublicStatusResponse = {
   },
 };
 
+const stationPublicStatus: StationPublicStatusResponse = {
+  protocol: 'radiotedu-platform/v1',
+  station_id: 'radiotedu-en',
+  online: true,
+  stale: false,
+  received_at: '2026-07-15T10:00:01Z',
+  snapshot: {
+    protocol: 'radiotedu-platform/v1',
+    schema_version: 2,
+    station: { id: 'radiotedu-en', language: 'en', display_name: 'RadioTEDU English' },
+    sequence: 12,
+    generated_at: '2026-07-15T10:00:00Z',
+    expires_at: null,
+    operational_state: 'live',
+    speech_state: { active: false, kind: 'music' },
+    now_playing: {
+      kind: 'music',
+      track_id: 'track-12',
+      title: 'Blue Room',
+      artist: 'Alice',
+      cover_id: null,
+      mood: 'calm',
+      sound_tags: ['calm'],
+      started_at: '2026-07-15T09:58:00Z',
+    },
+    current_program: { id: 'jazz-lab', name: 'Jazz Lab', vibe: 'Warm focus', sound_tags: ['warm', 'focused'] },
+    next_program: { id: 'tedu-dawn', name: 'TEDU Dawn', vibe: 'Bright start', sound_tags: ['bright'] },
+    stream: {
+      url: 'https://stream.radiotedu.com/en',
+      mount: '/en',
+      status: 'live',
+      codec: 'AAC-LC',
+      bitrate_kbps: 192,
+      public: true,
+    },
+    editorial: { sound_tags: ['warm', 'calm', 'focused'] },
+  },
+  metrics: {
+    active_website_listeners: 17,
+    airtime: { window_days: 14, classified_duration_ms: 123_000, music_percent: 84, talking_percent: 16 },
+  },
+};
+
 describe('PublicDashboard', () => {
-  it('renders the public RadioTEDU card without operator controls or fake financial data', () => {
-    window.localStorage.setItem('radiotedu_public_session', 'session_testpublic123');
+  it('renders only the essential English listener information', () => {
+    render(<PublicDashboard status={stationPublicStatus} language="en" />);
 
-    render(<PublicDashboard status={publicStatus} />);
-
-    expect(screen.getByRole('img', { name: 'RadioTEDU' })).toHaveAttribute(
+    expect(screen.getByRole('heading', { name: 'RadioTEDU English' })).toBeInTheDocument();
+    expect(screen.getByLabelText('RadioTEDU English live stream')).toHaveAttribute(
       'src',
-      '/static/generated/covers/radiotedu_logo_source.png',
+      'https://stream.radiotedu.com/en',
     );
-    expect(screen.getByRole('img', { name: 'RadioTEDU station cover' })).toHaveAttribute(
-      'src',
-      '/static/generated/covers/radiotedu_station.png',
-    );
-    expect(screen.getByRole('region', { name: 'Current program' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Jazz Lab program cover' })).toHaveAttribute(
-      'src',
-      '/static/generated/covers/night_lab.png',
-    );
-    expect(screen.getByRole('heading', { name: 'RadioTEDU' })).toBeInTheDocument();
-    expect(screen.getByText('Waiting for the broadcast computer to sync.')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for RadioTEDU broadcast.')).toBeInTheDocument();
-    expect(screen.getByText('Current Listeners')).toBeInTheDocument();
-    expect(screen.getByText('Broadcast Status')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy Stream Link' })).toBeInTheDocument();
-    expect(screen.getByText('Blue Room')).toBeInTheDocument();
-    expect(screen.getByText('42m left')).toBeInTheDocument();
-    expect(screen.getByText(/Up next at 06:00: TEDU Dawn/)).toBeInTheDocument();
-    expect(screen.getByText(/Jazz 100%/)).toBeInTheDocument();
-    expect(screen.getByText('Content Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('Share Card')).toBeInTheDocument();
-    expect(screen.getByText('Blue Room by Alice')).toBeInTheDocument();
-    expect(screen.getByText(/Music 84%/)).toBeInTheDocument();
-    expect(screen.getByText('RadioTEDU Activity')).toBeInTheDocument();
-    expect(screen.getByText('more mellow piano after midnight')).toBeInTheDocument();
-    expect(screen.getByText('Queued Blue Room by Alice.')).toBeInTheDocument();
-    expect(screen.queryByText(/Start|Stop|Skip|Rescan|Long-Horizon Strategy|Autonomy Ops|No logs yet/i)).toBeNull();
-    expect(screen.queryByText(/support|balance|money|donation|payment|revenue|profit/i)).toBeNull();
-    expect(screen.queryByText(/OpenAIR|Grok and Roll|Backlink Broadcast|Thinking Frequencies/i)).toBeNull();
+    expect(screen.getAllByText('Blue Room').length).toBeGreaterThan(0);
+    expect(screen.getByText('Jazz Lab')).toBeInTheDocument();
+    expect(screen.getByText('TEDU Dawn')).toBeInTheDocument();
+    expect(screen.getByText('17')).toBeInTheDocument();
+    expect(screen.getByText('84%')).toBeInTheDocument();
+    expect(screen.getByText('16%')).toBeInTheDocument();
+    expect(screen.getByText('Warm')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Français' })).toHaveAttribute('href', '/ai/fr');
+    expect(screen.queryByText(/contact|message|purchase|wallet|reward|vote|social|playout|control|copy|share/i)).toBeNull();
   });
 
-  it('keeps the last broadcast snapshot visible when live polling is interrupted', () => {
+  it('localizes the French station and language switch', () => {
+    const frenchStatus: StationPublicStatusResponse = {
+      ...stationPublicStatus,
+      station_id: 'radiotedu-fr',
+      snapshot: {
+        ...stationPublicStatus.snapshot!,
+        station: { id: 'radiotedu-fr', language: 'fr', display_name: 'RadioTEDU Français' },
+        stream: { ...stationPublicStatus.snapshot!.stream, url: 'https://stream.radiotedu.com/fr', mount: '/fr' },
+      },
+    };
+
+    render(<PublicDashboard status={frenchStatus} language="fr" />);
+
+    expect(screen.getByRole('heading', { name: 'RadioTEDU Français' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Flux en direct de RadioTEDU Français')).toHaveAttribute(
+      'src',
+      'https://stream.radiotedu.com/fr',
+    );
+    expect(screen.getByText('Émission actuelle')).toBeInTheDocument();
+    expect(screen.getByText('Musique')).toBeInTheDocument();
+    expect(screen.getByText('Parlé')).toBeInTheDocument();
+    expect(screen.getByText('Chaleureux')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'English' })).toHaveAttribute('href', '/ai/en');
+  });
+
+  it('shows unavailable instead of a zero split when classified airtime is empty', () => {
+    const emptyStatus: StationPublicStatusResponse = {
+      ...stationPublicStatus,
+      metrics: {
+        ...stationPublicStatus.metrics,
+        airtime: { window_days: 14, classified_duration_ms: 0, music_percent: null, talking_percent: null },
+      },
+    };
+
+    render(<PublicDashboard status={emptyStatus} language="en" />);
+
+    expect(screen.getByLabelText('Last 14 days')).toHaveTextContent('Unavailable');
+    expect(screen.queryByText('0%')).toBeNull();
+  });
+
+  it('keeps the last valid snapshot visible when polling is interrupted', () => {
     render(
       <PublicDashboard
-        status={publicStatus}
-        connectionError="Public status request failed: 503"
+        status={{ ...stationPublicStatus, stale: true }}
+        language="en"
+        connectionError="Station status request failed: 503"
       />,
     );
 
-    expect(screen.getByText('Blue Room')).toBeInTheDocument();
-    expect(screen.getAllByText('Jazz Lab').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Blue Room').length).toBeGreaterThan(0);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Live data connection interrupted. Showing the last received broadcast snapshot.',
+      'Live data connection interrupted. Showing the last valid station snapshot.',
     );
-    expect(screen.queryByText('Public status request failed: 503')).toBeNull();
-  });
-
-  it('acknowledges copying the stream link when Clipboard API is unavailable', async () => {
-    const user = userEvent.setup();
-
-    render(<PublicDashboard status={publicStatus} />);
-
-    await user.click(screen.getByRole('button', { name: 'Copy Stream Link' }));
-
-    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.queryByText('Station status request failed: 503')).toBeNull();
   });
 });

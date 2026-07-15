@@ -1706,3 +1706,322 @@ button {
     padding: 18px;
   }
 }
+
+/* Dual-station public listener pages. */
+.listener-page {
+  --listener-ink: #172038;
+  --listener-muted: #667085;
+  --listener-line: #dfe4ea;
+  --listener-paper: #fffdf9;
+  --listener-accent: #e85d35;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0 max(24px, calc((100vw - 1160px) / 2)) 72px;
+  color: var(--listener-ink);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(232, 93, 53, 0.13), transparent 27rem),
+    linear-gradient(180deg, #fffdf9 0%, #f4f1eb 100%);
+}
+
+.listener-header {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(23, 32, 56, 0.14);
+}
+
+.listener-wordmark,
+.language-switch {
+  color: inherit;
+  text-decoration: none;
+}
+
+.listener-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.listener-signal {
+  width: 14px;
+  height: 14px;
+  border: 4px solid var(--listener-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(232, 93, 53, 0.16);
+}
+
+.language-switch {
+  padding: 9px 14px;
+  border: 1px solid rgba(23, 32, 56, 0.24);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 750;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.language-switch:hover {
+  border-color: var(--listener-accent);
+  background: rgba(232, 93, 53, 0.07);
+}
+
+.listener-wordmark:focus-visible,
+.language-switch:focus-visible,
+.listener-player:focus-visible {
+  outline: 3px solid rgba(232, 93, 53, 0.5);
+  outline-offset: 4px;
+}
+
+.listener-notice {
+  margin-top: 20px;
+  padding: 11px 14px;
+  border: 1px solid #e8c56b;
+  border-radius: 8px;
+  color: #634b0d;
+  background: #fff8df;
+  font-size: 13px;
+}
+
+.listener-hero {
+  min-height: 400px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(310px, 0.7fr);
+  gap: 64px;
+  align-items: center;
+  padding: 64px 0 52px;
+}
+
+.listener-eyebrow,
+.listener-card-label {
+  margin: 0;
+  color: var(--listener-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.listener-eyebrow {
+  color: var(--listener-accent);
+}
+
+.listener-hero h1 {
+  margin: 12px 0 30px;
+  max-width: 720px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(46px, 7vw, 84px);
+  font-weight: 500;
+  line-height: 0.96;
+  letter-spacing: -0.055em;
+}
+
+.listener-now-title,
+.listener-now-artist {
+  margin: 0;
+}
+
+.listener-now-title {
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 760;
+  letter-spacing: -0.035em;
+}
+
+.listener-now-artist {
+  margin-top: 6px;
+  color: var(--listener-muted);
+  font-size: 17px;
+}
+
+.listener-player-card {
+  padding: 26px;
+  border: 1px solid rgba(23, 32, 56, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 22px 70px rgba(23, 32, 56, 0.09);
+}
+
+.listener-player-card > span {
+  display: block;
+  margin-bottom: 20px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.listener-player-card small {
+  display: block;
+  margin-top: 13px;
+  color: var(--listener-muted);
+}
+
+.listener-player {
+  width: 100%;
+  height: 46px;
+}
+
+.listener-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--listener-line);
+  border-left: 1px solid var(--listener-line);
+}
+
+.listener-info-card {
+  min-height: 150px;
+  padding: 22px;
+  border-right: 1px solid var(--listener-line);
+  border-bottom: 1px solid var(--listener-line);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.listener-info-card--emphasis {
+  background: var(--listener-ink);
+}
+
+.listener-info-card--emphasis .listener-card-label {
+  color: #aeb7c9;
+}
+
+.listener-info-card--emphasis .listener-card-content {
+  color: white;
+}
+
+.listener-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 24px;
+}
+
+.listener-card-content strong {
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+
+.listener-info-card--emphasis .listener-card-content strong {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.listener-card-content span {
+  color: var(--listener-muted);
+  font-size: 13px;
+}
+
+.listener-insights {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 22px;
+  padding-top: 22px;
+}
+
+.airtime-card,
+.sound-card {
+  min-height: 190px;
+  padding: 26px;
+  border: 1px solid var(--listener-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.airtime-numbers {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 25px;
+}
+
+.airtime-numbers span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--listener-muted);
+  font-size: 13px;
+}
+
+.airtime-numbers b {
+  color: var(--listener-ink);
+  font-size: 31px;
+  letter-spacing: -0.04em;
+}
+
+.airtime-track {
+  height: 9px;
+  margin-top: 28px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #cfd5df;
+}
+
+.airtime-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--listener-accent);
+}
+
+.sound-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 30px;
+}
+
+.sound-tags span {
+  padding: 10px 13px;
+  border-radius: 999px;
+  color: #7c321d;
+  background: rgba(232, 93, 53, 0.12);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.metric-unavailable {
+  margin: 28px 0 0;
+  color: var(--listener-muted);
+  font-size: 18px;
+}
+
+@media (max-width: 860px) {
+  .listener-hero {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding: 52px 0 38px;
+  }
+
+  .listener-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 580px) {
+  .listener-page {
+    padding: 0 16px 40px;
+  }
+
+  .listener-header {
+    min-height: 70px;
+  }
+
+  .listener-hero h1 {
+    font-size: 44px;
+  }
+
+  .listener-grid,
+  .listener-insights {
+    grid-template-columns: 1fr;
+  }
+
+  .listener-info-card {
+    min-height: 126px;
+  }
+
+  .airtime-numbers {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

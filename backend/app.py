@@ -122,6 +122,8 @@ def create_app(
         return build_status(settings, agent, orchestrator, public_snapshot_pusher)
 
     @app.get("/ai")
+    @app.get("/ai/en")
+    @app.get("/ai/fr")
     def public_ai_page():
         index_path = frontend_dist / "index.html"
         if not index_path.exists():
@@ -130,6 +132,8 @@ def create_app(
 
     @app.get("/api/public/status")
     def public_status_endpoint() -> dict:
+        if not settings.public_compatibility_enabled:
+            raise HTTPException(status_code=404, detail="compatibility adapter is disabled")
         return public_status(settings)
 
     @app.post("/api/public/snapshot")
@@ -137,6 +141,8 @@ def create_app(
         payload: PublicSnapshotRequest = Body(...),
         x_radiotedu_sync_token: str | None = Header(default=None),
     ) -> dict:
+        if not settings.public_compatibility_enabled:
+            raise HTTPException(status_code=404, detail="compatibility adapter is disabled")
         if not settings.public_sync_token or x_radiotedu_sync_token != settings.public_sync_token:
             raise HTTPException(status_code=401, detail="invalid sync token")
         snapshot = store_public_snapshot(settings, _model_to_dict(payload))
@@ -144,6 +150,8 @@ def create_app(
 
     @app.post("/api/public/session/start")
     def public_session_start_endpoint(request: PublicSessionRequest, raw: Request) -> dict:
+        if not settings.public_compatibility_enabled:
+            raise HTTPException(status_code=404, detail="compatibility adapter is disabled")
         try:
             return public_session_start(settings, request.session_id, raw.headers.get("user-agent"))
         except ValueError as exc:
@@ -151,6 +159,8 @@ def create_app(
 
     @app.post("/api/public/session/heartbeat")
     def public_session_heartbeat_endpoint(request: PublicSessionRequest) -> dict:
+        if not settings.public_compatibility_enabled:
+            raise HTTPException(status_code=404, detail="compatibility adapter is disabled")
         try:
             return public_session_heartbeat(settings, request.session_id)
         except ValueError as exc:
@@ -158,6 +168,8 @@ def create_app(
 
     @app.post("/api/public/session/end")
     def public_session_end_endpoint(request: PublicSessionRequest) -> dict:
+        if not settings.public_compatibility_enabled:
+            raise HTTPException(status_code=404, detail="compatibility adapter is disabled")
         try:
             return public_session_end(settings, request.session_id)
         except ValueError as exc:
