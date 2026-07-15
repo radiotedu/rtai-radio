@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import wave
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,8 @@ from uuid import uuid4
 from .config import Settings
 from .announcements.models import AnnouncementJob
 from .database import connect, init_db, log_event, now_iso, rows_to_dicts
+from .editorial import build_pop_liner, research_allowed
+from .editorial_research import EditorialResearchService, FactCard
 from .llm import choose_track_with_llm, ollama_runtime_status
 from .playback import PlaybackController, QueueItem
 from .scheduler import current_program
@@ -32,6 +35,13 @@ class RadioAgent:
         init_db(self._database_runtime)
         self.playback = PlaybackController(self.settings)
         self.tts = build_tts_provider(self.context)
+        research_provider = (
+            SearXNGSearchProvider(self.settings.searxng_url)
+            if self.settings.search_provider == "searxng"
+            else RSSSearchProvider(self.settings.rss_feeds_path)
+        )
+        self.editorial_research = EditorialResearchService(research_provider)
+        self._recent_pop_template_ids: dict[str, list[str]] = {}
         self.last_search_at: datetime | None = None
         self.weather_provider = OpenMeteoWeatherProvider(self.settings)
         self.last_weather_at: datetime | None = None
@@ -425,36 +435,27 @@ class RadioAgent:
                 "text": self._prebuffer_announcement_text(program, index, required),
                 "metadata": {"program": program.get("name"), "prebuffer": True},
             }
-        context = self._web_context(self._search_query_for_candidates(candidates))
-        song_context = self._song_context_announcement(program, candidates, context)
-        if song_context:
-            return song_context
         weather_context = self._weather_context()
         recent = self._recent_tracks()
         choice = choose_track_with_llm(
             candidates,
             program,
             recent,
-            context,
+            [],
             self.settings,
             weather_context=weather_context,
             runtime_status=self._llm_runtime_status(),
         )
         selected = next(item for item in candidates if int(item["id"]) == choice.song_id)
-        return {
-            "text": choice.dj_line,
-            "metadata": {
-                "program": program.get("name"),
-                "prebuffer": True,
-                "track_id": int(selected["id"]),
-                "track_title": selected.get("title"),
-                "track_artist": selected.get("artist"),
-                "track_genre": selected.get("genre"),
+        announcement = self._editorial_announcement(program, selected)
+        announcement["metadata"].update(
+            {
                 "decision_reason": choice.reason,
                 "used_fallback": choice.used_fallback,
                 "fallback_role": "dead_air_prevention" if choice.used_fallback else None,
-            },
-        }
+            }
+        )
+        return announcement
 
     def _weather_announcement(self, program: dict) -> dict | None:
         if not self.settings.weather_enabled:
@@ -484,36 +485,86 @@ class RadioAgent:
             },
         }
 
-    def _song_context_announcement(self, program: dict, candidates: list[dict], context: list[dict]) -> dict | None:
-        for candidate in candidates:
-            title = " ".join(str(candidate.get("title") or "").split())
-            artist = " ".join(str(candidate.get("artist") or "").split())
-            if not title and not artist:
-                continue
-            for item in context[:5]:
-                snippet = " ".join(str(item.get("snippet") or "").split())
-                url = " ".join(str(item.get("url") or "").split())
-                source = " ".join(str(item.get("source") or "").split())
-                haystack = f"{item.get('title') or ''} {snippet}".lower()
-                if not snippet or not source or not url:
-                    continue
-                if title.lower() not in haystack and artist.lower() not in haystack:
-                    continue
-                line = f"RadioTEDU source note for {title or artist}: {snippet}"
-                return {
-                    "text": " ".join(line.split()[:30]),
-                    "metadata": {
-                        "program": program.get("name"),
-                        "prebuffer": True,
-                        "kind": "song_context",
-                        "track_id": int(candidate["id"]),
-                        "track_title": title,
-                        "track_artist": artist,
-                        "context_url": url,
-                        "source": source,
-                    },
-                }
-        return None
+    def _editorial_announcement(self, program: dict, track: dict) -> dict:
+        title = " ".join(str(track.get("title") or "this track").split())
+        artist = " ".join(str(track.get("artist") or "an artist").split())
+        language = self.context.profile.language
+        metadata = {
+            "program": program.get("name"),
+            "prebuffer": True,
+            "track_id": int(track["id"]),
+            "track_title": title,
+            "track_artist": artist,
+            "track_genre": track.get("genre"),
+        }
+        if not research_allowed(track.get("genre")):
+            daypart = self._voice_daypart()
+            recent_ids = self._recent_pop_template_ids.get(daypart, [])
+            liner = build_pop_liner(language, daypart, title, artist, recent_ids)
+            self._recent_pop_template_ids[daypart] = [liner.template_id]
+            metadata.update({"kind": "pop_liner", "template_id": liner.template_id})
+            return {"text": liner.text, "metadata": metadata}
+
+        card = self._research_fact_card(track)
+        if card is None:
+            if language == "fr":
+                text = f"Sur Radio TED U, voici {title} de {artist}."
+            else:
+                text = f"On Radio TED U, here is {title} by {artist}."
+            metadata["kind"] = "catalog_liner"
+            return {"text": text, "metadata": metadata}
+
+        self._persist_fact_card(card)
+        if language == "fr":
+            text = f"Note musicale sur Radio TED U pour {title} de {artist} : {card.fact}"
+        else:
+            text = f"A Radio TED U music note for {title} by {artist}: {card.fact}"
+        metadata.update(
+            {
+                "kind": "sourced_fact",
+                "context_url": card.url,
+                "source": card.source,
+                "retrieved_at": card.retrieved_at,
+                "match_evidence": card.match_evidence,
+            }
+        )
+        return {"text": " ".join(text.split()[:40]), "metadata": metadata}
+
+    def _research_fact_card(self, track: dict) -> FactCard | None:
+        now = datetime.now(timezone.utc)
+        if self.last_search_at and now - self.last_search_at < timedelta(
+            minutes=self.settings.web_search_interval_minutes
+        ):
+            return None
+        self.last_search_at = now
+        try:
+            return self.editorial_research.research(track, self.context.profile.language)
+        except Exception:
+            return None
+
+    def _persist_fact_card(self, card: FactCard) -> None:
+        fact_hash = hashlib.sha256(card.fact.encode("utf-8")).hexdigest()
+        with connect(self._database_runtime) as conn:
+            conn.execute(
+                """
+                insert or ignore into editorial_fact_cards (
+                    track_id, language, fact, fact_hash, url, source,
+                    retrieved_at, match_evidence, created_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    card.track_id,
+                    card.language,
+                    card.fact,
+                    fact_hash,
+                    card.url,
+                    card.source,
+                    card.retrieved_at,
+                    card.match_evidence,
+                    now_iso(),
+                ),
+            )
+            conn.commit()
 
     def _news_announcement(self, program: dict) -> dict | None:
         if not self.settings.news_enabled:

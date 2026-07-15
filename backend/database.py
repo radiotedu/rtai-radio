@@ -912,6 +912,26 @@ create index if not exists idx_station_public_events_delivery
 """
 
 
+EDITORIAL_FACT_CARD_SCHEMA = """
+create table if not exists editorial_fact_cards (
+    id integer primary key autoincrement,
+    track_id integer not null references tracks(id) on delete cascade,
+    language text not null check(language in ('en', 'fr')),
+    fact text not null check(length(trim(fact)) between 1 and 1000),
+    fact_hash text not null check(length(fact_hash) = 64),
+    url text not null check(url like 'http://%' or url like 'https://%'),
+    source text not null check(length(trim(source)) between 1 and 80),
+    retrieved_at text not null,
+    match_evidence text not null,
+    created_at text not null,
+    unique(track_id, language, url, fact_hash)
+);
+
+create index if not exists idx_editorial_fact_cards_track_language
+    on editorial_fact_cards(track_id, language, retrieved_at desc);
+"""
+
+
 DEFAULT_MIGRATIONS = (
     Migration(
         1,
@@ -956,5 +976,12 @@ DEFAULT_MIGRATIONS = (
         STATION_PUBLIC_EVENT_SCHEMA,
         required_columns=_schema_column_requirements(STATION_PUBLIC_EVENT_SCHEMA),
         schema_contract=_schema_contract(STATION_PUBLIC_EVENT_SCHEMA),
+    ),
+    Migration(
+        7,
+        "create_editorial_fact_cards",
+        EDITORIAL_FACT_CARD_SCHEMA,
+        required_columns=_schema_column_requirements(EDITORIAL_FACT_CARD_SCHEMA),
+        schema_contract=_schema_contract(EDITORIAL_FACT_CARD_SCHEMA),
     ),
 )

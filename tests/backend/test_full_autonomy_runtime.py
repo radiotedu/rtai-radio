@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from backend.app import create_app
 from backend.config import Settings
 from backend.database import connect, init_db
+from backend.editorial_research import EditorialResearchService
 from backend.llm import choose_track_with_llm
 from backend.liquidsoap import render_liquidsoap_config
 from backend.music_library import scan_music
@@ -18,6 +19,7 @@ from backend.ollama_setup import check_ollama_setup, repair_ollama_runtime
 from backend.orchestrator import AutonomousOrchestrator
 from backend.playback import PlaybackController, QueueItem
 from backend.radio_agent import RadioAgent
+from backend.search.base import SearchResult
 from backend.stations.context import coerce_station_context
 from backend.tts.contracts import QwenUnavailableError
 from backend.tts.qwen_tts import QwenTTSProvider
@@ -98,6 +100,69 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             agent = RadioAgent(settings)
             self.assertEqual("qwen", agent.tts.provider_name)
             self.assertFalse(hasattr(agent.tts, "fallback"))
+
+    def test_pop_editorial_uses_localized_filler_without_search(self) -> None:
+        class RecordingProvider:
+            queries = []
+
+            def search(self, query, limit=5):
+                self.queries.append((query, limit))
+                return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            agent = RadioAgent(settings)
+            provider = RecordingProvider()
+            agent.editorial_research = EditorialResearchService(provider)
+
+            announcement = agent._editorial_announcement(
+                {"name": "Campus Flow"},
+                {"id": 1, "title": "Levitating", "artist": "Dua Lipa", "genre": "pop"},
+            )
+
+            self.assertEqual([], provider.queries)
+            self.assertEqual("pop_liner", announcement["metadata"]["kind"])
+            self.assertIn("Radio TED U", announcement["text"])
+            self.assertIn("Levitating", announcement["text"])
+
+    def test_curated_editorial_persists_fact_card_provenance(self) -> None:
+        class RecordingProvider:
+            def search(self, query, limit=5):
+                del query, limit
+                return [
+                    SearchResult(
+                        "Blue Room by Alice",
+                        "https://music.example/blue-room",
+                        "Alice recorded Blue Room during a late-night jazz session.",
+                        "searxng",
+                    )
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root)
+            make_wav(root / "music" / "Alice - Blue Room.wav")
+            scan_music(settings)
+            agent = RadioAgent(settings)
+            agent.editorial_research = EditorialResearchService(RecordingProvider())
+            with connect(settings) as conn:
+                conn.execute("update tracks set genre='jazz' where title='Blue Room'")
+                track = dict(conn.execute("select * from tracks where title='Blue Room'").fetchone())
+                conn.commit()
+
+            announcement = agent._editorial_announcement({"name": "Jazz Lab"}, track)
+
+            self.assertEqual("sourced_fact", announcement["metadata"]["kind"])
+            self.assertEqual("https://music.example/blue-room", announcement["metadata"]["context_url"])
+            with connect(settings) as conn:
+                card = conn.execute(
+                    "select track_id, language, url, source, match_evidence from editorial_fact_cards"
+                ).fetchone()
+            self.assertEqual(track["id"], card["track_id"])
+            self.assertEqual("en", card["language"])
+            self.assertEqual("https://music.example/blue-room", card["url"])
+            self.assertEqual("searxng", card["source"])
+            self.assertIn("title+artist", card["match_evidence"])
 
     def test_listener_messages_api_returns_sanitized_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -703,7 +768,7 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
                 self.assertLessEqual(len(row["text"].split()), 24)
             self.assertEqual(len(planned_ids), len(set(planned_ids)))
 
-    def test_prebuffer_announcement_uses_real_search_context_when_llm_falls_back(self) -> None:
+    def test_prebuffer_announcement_uses_strict_curated_context_when_llm_falls_back(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             settings = make_settings(root)
@@ -711,17 +776,23 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             make_wav(root / "music" / "Alice - Blue Room.wav")
             scan_music(settings)
 
-            class SearchContextAgent(RadioAgent):
-                def _web_context(self, query: str = "music culture") -> list[dict]:
+            class SearchProvider:
+                def search(self, query: str, limit: int = 5):
+                    del query, limit
                     return [
-                        {
-                            "title": "Alice Blue Room",
-                            "snippet": "hard bop campus session with a late-night trio arrangement",
-                            "url": "https://example.test/alice-blue-room",
-                        }
+                        SearchResult(
+                            "Alice Blue Room jazz session",
+                            "https://example.test/alice-blue-room",
+                            "Alice recorded Blue Room as a hard bop campus session with a late-night trio arrangement.",
+                            "searxng",
+                        )
                     ]
 
-            agent = SearchContextAgent(settings)
+            agent = RadioAgent(settings)
+            agent.editorial_research = EditorialResearchService(SearchProvider())
+            with connect(settings) as conn:
+                conn.execute("update tracks set genre='jazz' where title='Blue Room'")
+                conn.commit()
             result = agent.ensure_announcement_prebuffer("night_lab")
 
             self.assertTrue(result["ready_to_broadcast"])
@@ -733,8 +804,10 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual("Blue Room", metadata["track_title"])
             self.assertTrue(metadata["used_fallback"])
             self.assertEqual("dead_air_prevention", metadata["fallback_role"])
+            self.assertEqual("sourced_fact", metadata["kind"])
+            self.assertEqual("searxng", metadata["source"])
             self.assertIn("hard bop", row["text"])
-            self.assertLessEqual(len(row["text"].split()), 24)
+            self.assertLessEqual(len(row["text"].split()), 40)
 
     def test_prebuffer_replaces_legacy_generic_agent_rows_when_tracks_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

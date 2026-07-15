@@ -84,7 +84,37 @@ def test_repeating_startup_does_not_reapply_initial_migration(tmp_path: Path) ->
         program_count = conn.execute("select count(*) from programs").fetchone()[0]
 
     assert repeated_checkpoint == first_checkpoint
-    assert program_count == 4
+    assert program_count == 6
+
+
+def test_editorial_fact_card_migration_is_versioned_and_constrained(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    database.init_db(settings)
+
+    with database.connect(settings) as conn:
+        checkpoint = conn.execute(
+            "select name from schema_migrations where version=7"
+        ).fetchone()
+        columns = {
+            row["name"] for row in conn.execute("pragma table_info(editorial_fact_cards)")
+        }
+        indexes = {
+            row["name"] for row in conn.execute("pragma index_list(editorial_fact_cards)")
+        }
+
+    assert tuple(checkpoint) == ("create_editorial_fact_cards",)
+    assert {
+        "track_id",
+        "language",
+        "fact",
+        "fact_hash",
+        "url",
+        "source",
+        "retrieved_at",
+        "match_evidence",
+        "created_at",
+    } <= columns
+    assert indexes
 
 
 def test_migrations_are_applied_in_version_order() -> None:

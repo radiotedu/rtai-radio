@@ -1000,7 +1000,7 @@ class RadioTEDUCoreTests(unittest.TestCase):
             self.assertNotEqual("weather", metadata.get("kind"))
             self.assertNotIn("No weather data", row["text"])
 
-    def test_song_context_prebuffer_uses_sourced_context_only(self) -> None:
+    def test_curated_prebuffer_uses_strict_sourced_context_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             settings = self.make_settings(root)
@@ -1008,29 +1008,38 @@ class RadioTEDUCoreTests(unittest.TestCase):
             settings.max_ready_announcements = 1
             make_wav(root / "music" / "Alice - Blue Room.wav")
             scan_music(settings)
+            from backend.editorial_research import EditorialResearchService
             from backend.radio_agent import RadioAgent
+            from backend.search.base import SearchResult
+
+            class Provider:
+                def search(self, _query, limit=5):
+                    return [
+                        SearchResult(
+                            "Blue Room by Alice source note",
+                            "https://music.example/blue-room",
+                            "Alice recorded Blue Room during a late Ankara jazz session.",
+                            "rss",
+                        )
+                    ][:limit]
 
             agent = RadioAgent(settings)
             use_test_qwen_synthesis(agent)
-            agent._web_context = lambda _query: [
-                {
-                    "title": "Blue Room by Alice source note",
-                    "snippet": "Alice recorded Blue Room during a late Ankara session.",
-                    "url": "https://music.example/blue-room",
-                    "source": "rss",
-                }
-            ]
+            agent.editorial_research = EditorialResearchService(Provider())
+            with connect(settings) as conn:
+                conn.execute("update tracks set genre='jazz' where title='Blue Room'")
+                conn.commit()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
             self.assertTrue(readiness["ready_to_broadcast"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
             metadata = json.loads(row["metadata_json"])
-            self.assertEqual("song_context", metadata["kind"])
+            self.assertEqual("sourced_fact", metadata["kind"])
             self.assertEqual("https://music.example/blue-room", metadata["context_url"])
             self.assertIn("Alice recorded Blue Room", row["text"])
 
-    def test_song_context_prebuffer_skips_when_no_sourced_context_exists(self) -> None:
+    def test_curated_prebuffer_uses_catalog_liner_when_no_sourced_context_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             settings = self.make_settings(root)
@@ -1038,18 +1047,29 @@ class RadioTEDUCoreTests(unittest.TestCase):
             settings.max_ready_announcements = 1
             make_wav(root / "music" / "Alice - Blue Room.wav")
             scan_music(settings)
+            from backend.editorial_research import EditorialResearchService
             from backend.radio_agent import RadioAgent
+
+            class EmptyProvider:
+                def search(self, _query, limit=5):
+                    del limit
+                    return []
 
             agent = RadioAgent(settings)
             use_test_qwen_synthesis(agent)
-            agent._web_context = lambda _query: []
+            agent.editorial_research = EditorialResearchService(EmptyProvider())
+            with connect(settings) as conn:
+                conn.execute("update tracks set genre='classical' where title='Blue Room'")
+                conn.commit()
             readiness = agent.ensure_announcement_prebuffer("night_lab")
 
             self.assertTrue(readiness["ready_to_broadcast"])
             with connect(settings) as conn:
                 row = conn.execute("select text, metadata_json from announcement_queue where status='ready'").fetchone()
+                fact_count = conn.execute("select count(*) from editorial_fact_cards").fetchone()[0]
             metadata = json.loads(row["metadata_json"])
-            self.assertNotEqual("song_context", metadata.get("kind"))
+            self.assertEqual("catalog_liner", metadata.get("kind"))
+            self.assertEqual(0, fact_count)
 
     def test_llm_prompt_includes_weather_context_for_announcements(self) -> None:
         prompt = build_user_prompt(
