@@ -67,13 +67,23 @@ class RadioTEDUCoreTests(unittest.TestCase):
                     [
                         ("Campus Flow",),
                         ("Jazz Lab",),
+                        ("Night Signal",),
                         ("TEDU Dawn",),
+                        ("Weekend Night Signal",),
                         ("Weekend Signal",),
                     ],
                     [tuple(row) for row in programs],
                 )
                 voices = conn.execute("select name, host_name, host_gender, voice from programs order by name").fetchall()
                 self.assertIn(("Jazz Lab", "Selin", "female", "tr_female_cool"), [tuple(row) for row in voices])
+                self.assertIn(("Night Signal", "Ece", "female", "tr_female_warm"), [tuple(row) for row in voices])
+                self.assertIn(("Weekend Night Signal", "Deniz", "male", "tr_male_late"), [tuple(row) for row in voices])
+                copy = " ".join(
+                    row[0]
+                    for row in conn.execute("select description || ' ' || vibe from programs").fetchall()
+                ).casefold()
+                self.assertIn("pop", copy)
+                self.assertIn("classical", copy)
                 for table in ("tracks", "play_history", "listener_events"):
                     count = conn.execute(f"select count(*) from {table}").fetchone()[0]
                     self.assertEqual(0, count, table)

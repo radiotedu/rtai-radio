@@ -135,5 +135,14 @@ def test_rejects_host_without_approved_reference_fields(tmp_path):
 def test_normalizes_french_spacing_without_translating():
     assert (
         normalize_broadcast_text("  Bonjour !  Vous écoutez RadioTEDU. ", "fr", "fr-FR")
-        == "Bonjour ! Vous écoutez RadioTEDU."
+        == "Bonjour ! Vous écoutez Radio TED U."
+    )
+
+
+def test_speech_brand_is_pronounced_radio_ted_u_in_both_languages():
+    assert normalize_broadcast_text("You are listening to RadioTEDU.", "en", "en-US") == (
+        "You are listening to Radio TED U."
+    )
+    assert normalize_broadcast_text("Vous écoutez RadioTEDU.", "fr", "fr-FR") == (
+        "Vous écoutez Radio TED U."
     )

@@ -15,6 +15,7 @@ def normalize_broadcast_text(text: str, language: str, locale: str) -> str:
         raise ValueError("broadcast text cannot be blank")
     if (language, locale) not in {("en", "en-US"), ("fr", "fr-FR")}:
         raise ValueError(f"unsupported station language/locale pair: {language}/{locale}")
+    normalized = re.sub(r"\bRadioTEDU\b", "Radio TED U", normalized, flags=re.IGNORECASE)
     return normalized[:800]
 
 
