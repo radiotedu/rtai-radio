@@ -12,11 +12,13 @@ radio = mksafe(radio)
 {{processing}}
 
 output.icecast(
-  %mp3,
+  {{encoder}},
   host="{{host}}",
   port={{port}},
+  user="{{source_user}}",
   password=source_password,
   mount="{{mount}}",
+  public={{public}},
   name="RadioTEDU Français",
   description="RadioTEDU French AI radio",
   genre="AI Radio",

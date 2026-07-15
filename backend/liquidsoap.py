@@ -15,14 +15,16 @@ from .config import Settings
 
 _STATION_LIQUIDSOAP = {
     "radiotedu-en": {
-        "mount": "/radiotedu-en",
+        "mount": "/en",
         "credentials_environment": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
     },
     "radiotedu-fr": {
-        "mount": "/radiotedu-fr",
+        "mount": "/fr",
         "credentials_environment": "RADIOTEDU_FR_SOURCE_CREDENTIALS",
     },
 }
+
+_AAC_192_ENCODER = '%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)'
 
 
 def liquidsoap_pid_path(settings: Settings) -> Path:
@@ -134,6 +136,9 @@ def _render_station_template(
         "host": settings.liquidsoap_host,
         "port": str(settings.liquidsoap_port),
         "mount": station["mount"],
+        "source_user": settings.liquidsoap_icecast_user,
+        "encoder": _encoder_for_profile(settings.liquidsoap_encoder_profile),
+        "public": str(settings.liquidsoap_public).lower(),
         "processing": _processing_block(processing_profile),
     }
     for key, value in replacements.items():
@@ -147,6 +152,13 @@ def _render_station_template(
         "log_paths": {name: str(path) for name, path in logs.items()},
         "credentials_environment": credentials_environment,
         "source_ids": source_ids,
+        "source_host": settings.liquidsoap_host,
+        "source_port": settings.liquidsoap_port,
+        "source_user": settings.liquidsoap_icecast_user,
+        "encoder_profile": settings.liquidsoap_encoder_profile,
+        "codec": "AAC-LC",
+        "bitrate_kbps": 192,
+        "public_listing": settings.liquidsoap_public,
     }
 
 
@@ -192,9 +204,12 @@ def render_liquidsoap_config(
         )
         mount = station["mount"]
     else:
+        source_password_environment = "ICECAST_PASSWORD"
         script = f"""# RadioTEDU Liquidsoap configuration
 set("log.stdout", true)
 set("server.telnet", false)
+
+source_password = environment.get("{source_password_environment}")
 
 radio = playlist(id="RadioTEDU", mode="normal", reload=1, reload_mode="watch", "{queue_path.as_posix()}")
 radio = mksafe(radio)
@@ -248,17 +263,29 @@ radio = limit(threshold={processing_profile.true_peak_ceiling_dbtp:.1f}, radio)
 
 # encoder
 output.icecast(
-  %mp3,
+  {_encoder_for_profile(settings.liquidsoap_encoder_profile)},
   host="{settings.liquidsoap_host}",
   port={settings.liquidsoap_port},
-  password="{settings.liquidsoap_icecast_password}",
+  user="{settings.liquidsoap_icecast_user}",
+  password=source_password,
   mount="{mount}",
+  public={str(settings.liquidsoap_public).lower()},
   name="RadioTEDU",
   description="RadioTEDU AI radio",
   genre="AI Radio",
   radio
 )
 """
+        station_rendered = {
+            "credentials_environment": source_password_environment,
+            "source_host": settings.liquidsoap_host,
+            "source_port": settings.liquidsoap_port,
+            "source_user": settings.liquidsoap_icecast_user,
+            "encoder_profile": settings.liquidsoap_encoder_profile,
+            "codec": "AAC-LC",
+            "bitrate_kbps": 192,
+            "public_listing": settings.liquidsoap_public,
+        }
     script_path.write_text(script, encoding="utf-8")
     return {
         "queue_path": str(queue_path),
@@ -295,6 +322,52 @@ def verify_liquidsoap_output(settings: Settings) -> dict:
         "queue_error": queue_error,
         "script_references_queue": script_references_queue,
         "verified": bool(queue_readable and script_references_queue and status["mount_active"]),
+    }
+
+
+def _encoder_for_profile(profile: str) -> str:
+    if profile != "aac_192":
+        raise ValueError(f"unsupported Liquidsoap encoder profile: {profile}")
+    return _AAC_192_ENCODER
+
+
+def liquidsoap_encoder_preflight(
+    settings: Settings,
+    *,
+    build_config: str | None = None,
+    command_path: str | None = None,
+) -> dict[str, object]:
+    if settings.liquidsoap_encoder_profile != "aac_192":
+        return {
+            "encoder_profile": settings.liquidsoap_encoder_profile,
+            "encoder_supported": False,
+            "reason": "unsupported_encoder_profile",
+        }
+    if build_config is None:
+        executable = command_path or shutil.which(settings.liquidsoap_command)
+        if not executable:
+            return {
+                "encoder_profile": "aac_192",
+                "encoder_supported": False,
+                "reason": "liquidsoap_missing",
+            }
+        try:
+            completed = subprocess.run(
+                [executable, "--build-config"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            build_config = ""
+        else:
+            build_config = f"{completed.stdout}\n{completed.stderr}"
+    supported = "fdkaac" in build_config.lower()
+    return {
+        "encoder_profile": "aac_192",
+        "encoder_supported": supported,
+        "reason": None if supported else "fdkaac_unavailable",
     }
 
 
@@ -350,6 +423,9 @@ def start_liquidsoap(settings: Settings) -> dict:
     command_path = status["command_path"]
     if not command_path:
         return {"started": False, "reason": "liquidsoap_missing", **status, **rendered}
+    encoder = liquidsoap_encoder_preflight(settings, command_path=command_path)
+    if not encoder["encoder_supported"]:
+        return {"started": False, **encoder, **status, **rendered}
     script_path = str(Path(settings.liquidsoap_script_path).resolve())
     out_path = Path(settings.liquidsoap_script_path).with_suffix(".out.log")
     err_path = Path(settings.liquidsoap_script_path).with_suffix(".err.log")

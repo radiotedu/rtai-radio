@@ -142,8 +142,8 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
     en = render_liquidsoap_config(station_context(tmp_path, "radiotedu-en").settings)
     fr = render_liquidsoap_config(station_context(tmp_path, "radiotedu-fr").settings)
 
-    assert en["mount"] == "/radiotedu-en"
-    assert fr["mount"] == "/radiotedu-fr"
+    assert en["mount"] == "/en"
+    assert fr["mount"] == "/fr"
     assert en["credentials_environment"] == "RADIOTEDU_EN_SOURCE_CREDENTIALS"
     assert fr["credentials_environment"] == "RADIOTEDU_FR_SOURCE_CREDENTIALS"
     assert en["source_ids"] == {
@@ -161,9 +161,20 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
 
     for rendered in (en, fr):
         script = Path(rendered["script_path"]).read_text(encoding="utf-8")
+        assert rendered["source_host"] == "10.98.98.75"
+        assert rendered["source_port"] == 11154
+        assert rendered["source_user"] == "source"
+        assert rendered["encoder_profile"] == "aac_192"
+        assert rendered["codec"] == "AAC-LC"
+        assert rendered["bitrate_kbps"] == 192
+        assert rendered["public_listing"] is True
         assert rendered["credentials_environment"] in script
         assert "environment.get(" in script
         assert "hackme" not in script
+        assert '%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)' in script
+        assert 'user="source"' in script
+        assert "public=true" in script
+        assert "%mp3" not in script
         assert Path(rendered["queue_path"]).as_posix() in script
         assert Path(rendered["fallback_queue_path"]).as_posix() in script
         for source_id in rendered["source_ids"].values():
@@ -172,3 +183,27 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
         assert "blank.detect(" in script
         assert "blank.skip(" in script
         assert Path(rendered["fallback_queue_path"]).exists()
+
+
+def test_aac_192_preflight_rejects_liquidsoap_without_fdkaac() -> None:
+    from backend.liquidsoap import liquidsoap_encoder_preflight
+
+    missing = liquidsoap_encoder_preflight(
+        Settings(liquidsoap_encoder_profile="aac_192"),
+        build_config="aacplus, ffmpeg, lame",
+    )
+    supported = liquidsoap_encoder_preflight(
+        Settings(liquidsoap_encoder_profile="aac_192"),
+        build_config="fdkaac, ffmpeg, lame",
+    )
+
+    assert missing == {
+        "encoder_profile": "aac_192",
+        "encoder_supported": False,
+        "reason": "fdkaac_unavailable",
+    }
+    assert supported == {
+        "encoder_profile": "aac_192",
+        "encoder_supported": True,
+        "reason": None,
+    }

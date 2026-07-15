@@ -8,15 +8,20 @@
   "public": {
     "route": "/ai/en",
     "compatibility_routes": ["/ai"],
-    "snapshot_endpoint": "/api/public/stations/radiotedu-en/snapshot",
-    "status_endpoint": "/api/public/stations/radiotedu-en/status",
-    "stream_url": "https://radiotedu.com:8001/radiotedu-en"
+    "snapshot_endpoint": "/v1/radio/stations/radiotedu-en/snapshot",
+    "status_endpoint": "/v1/radio/stations/radiotedu-en/status",
+    "stream_url": "https://stream.radiotedu.com/en"
   },
   "audio": {
-    "stream_mount": "/radiotedu-en",
+    "stream_mount": "/en",
     "loudness_lufs": -16,
     "true_peak_dbtp": -1,
-    "minimum_qwen_buffer": 5
+    "minimum_qwen_buffer": 5,
+    "source_host": "10.98.98.75",
+    "source_port": 11154,
+    "source_user": "source",
+    "encoder_profile": "aac_192",
+    "public_listing": true
   },
   "runtime": {
     "data_root": "data/stations/radiotedu-en",

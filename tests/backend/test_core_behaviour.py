@@ -537,7 +537,12 @@ class RadioTEDUCoreTests(unittest.TestCase):
             self.assertEqual("/ai", rendered["mount"])
             self.assertEqual("http://icecast.example:8010/ai", rendered["icecast_url"])
             self.assertIn('mount="/ai"', script)
-            self.assertIn('password="secret"', script)
+            self.assertIn('environment.get("ICECAST_PASSWORD")', script)
+            self.assertIn("password=source_password", script)
+            self.assertNotIn("secret", script)
+            self.assertIn('%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)', script)
+            self.assertIn('user="source"', script)
+            self.assertIn("public=true", script)
             self.assertNotIn("radiotedu.mp3", script)
 
             payload = TestClient(create_app(settings)).get("/api/status").json()

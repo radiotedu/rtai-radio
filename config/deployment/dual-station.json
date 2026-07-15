@@ -1,5 +1,15 @@
 {
   "contract_version": 1,
+  "icecast": {
+    "host": "10.98.98.75",
+    "port": 11154,
+    "source_user": "source",
+    "encoder_profile": "aac_192",
+    "codec": "AAC-LC",
+    "bitrate_kbps": 192,
+    "public": true,
+    "shared_failure_domain": true
+  },
   "stations": {
     "radiotedu-en": {
       "station_id": "radiotedu-en",
@@ -10,20 +20,11 @@
       "announcement_root": "data/stations/radiotedu-en/announcements",
       "cache_root": "data/stations/radiotedu-en/qwen-cache",
       "log_root": "data/stations/radiotedu-en/logs",
-      "mount": "/radiotedu-en",
+      "mount": "/en",
       "source_credentials_ref": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
       "snapshot_secret_ref": "RADIOTEDU_EN_SNAPSHOT_SECRET",
-      "public_listener_endpoint": "https://listen.radiotedu.com/en",
-      "host_endpoints": {
-        "stream-a": {
-          "primary": "https://stream-a.radiotedu.com:8001/radiotedu-en",
-          "fallback": "https://stream-a.radiotedu.com:8001/fallback-radiotedu-en"
-        },
-        "stream-b": {
-          "primary": "https://stream-b.radiotedu.com:8001/radiotedu-en",
-          "fallback": "https://stream-b.radiotedu.com:8001/fallback-radiotedu-en"
-        }
-      }
+      "public_listener_endpoint": "https://stream.radiotedu.com/en",
+      "source_endpoint": "http://10.98.98.75:11154/en"
     },
     "radiotedu-fr": {
       "station_id": "radiotedu-fr",
@@ -34,20 +35,11 @@
       "announcement_root": "data/stations/radiotedu-fr/announcements",
       "cache_root": "data/stations/radiotedu-fr/qwen-cache",
       "log_root": "data/stations/radiotedu-fr/logs",
-      "mount": "/radiotedu-fr",
+      "mount": "/fr",
       "source_credentials_ref": "RADIOTEDU_FR_SOURCE_CREDENTIALS",
       "snapshot_secret_ref": "RADIOTEDU_FR_SNAPSHOT_SECRET",
-      "public_listener_endpoint": "https://listen.radiotedu.com/fr",
-      "host_endpoints": {
-        "stream-a": {
-          "primary": "https://stream-a.radiotedu.com:8001/radiotedu-fr",
-          "fallback": "https://stream-a.radiotedu.com:8001/fallback-radiotedu-fr"
-        },
-        "stream-b": {
-          "primary": "https://stream-b.radiotedu.com:8001/radiotedu-fr",
-          "fallback": "https://stream-b.radiotedu.com:8001/fallback-radiotedu-fr"
-        }
-      }
+      "public_listener_endpoint": "https://stream.radiotedu.com/fr",
+      "source_endpoint": "http://10.98.98.75:11154/fr"
     }
   },
   "services": {

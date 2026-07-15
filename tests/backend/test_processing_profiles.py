@@ -17,7 +17,10 @@ def _settings(tmp_path: Path) -> SimpleNamespace:
         liquidsoap_mount="/radiotedu",
         liquidsoap_host="127.0.0.1",
         liquidsoap_port=8000,
+        liquidsoap_icecast_user="source",
         liquidsoap_icecast_password="test-password",
+        liquidsoap_encoder_profile="aac_192",
+        liquidsoap_public=True,
     )
 
 

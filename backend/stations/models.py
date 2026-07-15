@@ -20,6 +20,11 @@ class AudioProfile:
     loudness_lufs: int
     true_peak_dbtp: int
     minimum_qwen_buffer: int
+    source_host: str = "10.98.98.75"
+    source_port: int = 11154
+    source_user: str = "source"
+    encoder_profile: str = "aac_192"
+    public_listing: bool = True
     processing: ProcessingProfile = field(default_factory=ProcessingProfile)
 
 

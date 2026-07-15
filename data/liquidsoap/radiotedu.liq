@@ -2,6 +2,8 @@
 set("log.stdout", true)
 set("server.telnet", false)
 
+source_password = environment.get("ICECAST_PASSWORD")
+
 radio = playlist(id="RadioTEDU", mode="normal", reload=1, reload_mode="watch", "data/liquidsoap/queue.m3u")
 radio = mksafe(radio)
 
@@ -54,11 +56,13 @@ radio = limit(threshold=-1.0, radio)
 
 # encoder
 output.icecast(
-  %mp3,
-  host="127.0.0.1",
-  port=8001,
-  password="hackme",
-  mount="/ai",
+  %fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true),
+  host="10.98.98.75",
+  port=11154,
+  user="source",
+  password=source_password,
+  mount="/en",
+  public=true,
   name="RadioTEDU",
   description="RadioTEDU AI radio",
   genre="AI Radio",

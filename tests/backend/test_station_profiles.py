@@ -29,11 +29,11 @@ def make_profile(station_id: str = "radiotedu-en") -> StationProfile:
         public=PublicProfile(
             route="/ai/en",
             compatibility_routes=("/ai",),
-            snapshot_endpoint=f"/api/public/stations/{station_id}/snapshot",
-            status_endpoint=f"/api/public/stations/{station_id}/status",
-            stream_url=f"https://radiotedu.com:8001/{station_id}",
+            snapshot_endpoint=f"/v1/radio/stations/{station_id}/snapshot",
+            status_endpoint=f"/v1/radio/stations/{station_id}/status",
+            stream_url="https://stream.radiotedu.com/en",
         ),
-        audio=AudioProfile(f"/{station_id}", -16, -1, 5),
+        audio=AudioProfile("/en", -16, -1, 5),
         runtime=RuntimeProfile(
             f"data/stations/{station_id}",
             f"data/stations/{station_id}/radio.db",
@@ -65,7 +65,12 @@ def test_context_derives_station_scoped_settings() -> None:
     assert context.settings is not settings
     assert settings.database_path == "data/radiotedu.db"
     assert context.settings.database_path.endswith("data/stations/radiotedu-fr/radio.db")
-    assert context.settings.liquidsoap_mount == "/radiotedu-fr"
+    assert context.settings.liquidsoap_host == "10.98.98.75"
+    assert context.settings.liquidsoap_port == 11154
+    assert context.settings.liquidsoap_mount == "/fr"
+    assert context.settings.liquidsoap_icecast_user == "source"
+    assert context.settings.liquidsoap_encoder_profile == "aac_192"
+    assert context.settings.liquidsoap_public is True
     assert context.announcement_root != context.cache_root
 
 
@@ -387,11 +392,21 @@ def test_canonical_profiles_have_frozen_identity() -> None:
         public=PublicProfile(
             route="/ai/en",
             compatibility_routes=("/ai",),
-            snapshot_endpoint="/api/public/stations/radiotedu-en/snapshot",
-            status_endpoint="/api/public/stations/radiotedu-en/status",
-            stream_url="https://radiotedu.com:8001/radiotedu-en",
+            snapshot_endpoint="/v1/radio/stations/radiotedu-en/snapshot",
+            status_endpoint="/v1/radio/stations/radiotedu-en/status",
+            stream_url="https://stream.radiotedu.com/en",
         ),
-        audio=AudioProfile("/radiotedu-en", -16, -1, 5),
+        audio=AudioProfile(
+            "/en",
+            -16,
+            -1,
+            5,
+            source_host="10.98.98.75",
+            source_port=11154,
+            source_user="source",
+            encoder_profile="aac_192",
+            public_listing=True,
+        ),
         runtime=RuntimeProfile(
             "data/stations/radiotedu-en",
             "data/stations/radiotedu-en/radio.db",
@@ -413,11 +428,21 @@ def test_canonical_profiles_have_frozen_identity() -> None:
         public=PublicProfile(
             route="/ai/fr",
             compatibility_routes=(),
-            snapshot_endpoint="/api/public/stations/radiotedu-fr/snapshot",
-            status_endpoint="/api/public/stations/radiotedu-fr/status",
-            stream_url="https://radiotedu.com:8001/radiotedu-fr",
+            snapshot_endpoint="/v1/radio/stations/radiotedu-fr/snapshot",
+            status_endpoint="/v1/radio/stations/radiotedu-fr/status",
+            stream_url="https://stream.radiotedu.com/fr",
         ),
-        audio=AudioProfile("/radiotedu-fr", -16, -1, 5),
+        audio=AudioProfile(
+            "/fr",
+            -16,
+            -1,
+            5,
+            source_host="10.98.98.75",
+            source_port=11154,
+            source_user="source",
+            encoder_profile="aac_192",
+            public_listing=True,
+        ),
         runtime=RuntimeProfile(
             "data/stations/radiotedu-fr",
             "data/stations/radiotedu-fr/radio.db",
@@ -518,6 +543,11 @@ def test_scalar_values_are_not_coerced(tmp_path: Path) -> None:
         "status_endpoint",
         "stream_url",
         "stream_mount",
+        "source_host",
+        "source_port",
+        "source_user",
+        "encoder_profile",
+        "public_listing",
         "minimum_qwen_buffer",
         "music_root",
         "voice_pack",
@@ -537,10 +567,15 @@ def test_frozen_station_identity_rejects_mixed_or_alternate_values(tmp_path: Pat
         "language_locale": lambda: (raw.__setitem__("language", "fr"), raw.__setitem__("locale", "fr-FR")),
         "public_route": lambda: public.__setitem__("route", "/ai/english"),
         "compatibility_routes": lambda: public.__setitem__("compatibility_routes", []),
-        "snapshot_endpoint": lambda: public.__setitem__("snapshot_endpoint", "/api/public/stations/radiotedu-en/other"),
-        "status_endpoint": lambda: public.__setitem__("status_endpoint", "/api/public/stations/radiotedu-en/other"),
-        "stream_url": lambda: public.__setitem__("stream_url", "https://radiotedu.com:8001/other"),
-        "stream_mount": lambda: audio.__setitem__("stream_mount", "/radiotedu-en-alt"),
+        "snapshot_endpoint": lambda: public.__setitem__("snapshot_endpoint", "/v1/radio/stations/radiotedu-en/other"),
+        "status_endpoint": lambda: public.__setitem__("status_endpoint", "/v1/radio/stations/radiotedu-en/other"),
+        "stream_url": lambda: public.__setitem__("stream_url", "https://stream.radiotedu.com/other"),
+        "stream_mount": lambda: audio.__setitem__("stream_mount", "/en-alt"),
+        "source_host": lambda: audio.__setitem__("source_host", "127.0.0.1"),
+        "source_port": lambda: audio.__setitem__("source_port", 8000),
+        "source_user": lambda: audio.__setitem__("source_user", "alternate"),
+        "encoder_profile": lambda: audio.__setitem__("encoder_profile", "mp3_192"),
+        "public_listing": lambda: audio.__setitem__("public_listing", False),
         "minimum_qwen_buffer": lambda: audio.__setitem__("minimum_qwen_buffer", 6),
         "music_root": lambda: runtime.__setitem__("music_root", "media/stations/radiotedu-en/alternate"),
         "voice_pack": lambda: raw.__setitem__("voice_pack", "radiotedu-en-voices-v2"),

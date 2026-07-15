@@ -18,10 +18,15 @@ FROZEN_IDENTITIES: dict[str, dict[str, Any]] = {
         "timezone": "Europe/Istanbul",
         "public.route": "/ai/en",
         "public.compatibility_routes": ("/ai",),
-        "public.snapshot_endpoint": "/api/public/stations/radiotedu-en/snapshot",
-        "public.status_endpoint": "/api/public/stations/radiotedu-en/status",
-        "public.stream_url": "https://radiotedu.com:8001/radiotedu-en",
-        "audio.stream_mount": "/radiotedu-en",
+        "public.snapshot_endpoint": "/v1/radio/stations/radiotedu-en/snapshot",
+        "public.status_endpoint": "/v1/radio/stations/radiotedu-en/status",
+        "public.stream_url": "https://stream.radiotedu.com/en",
+        "audio.stream_mount": "/en",
+        "audio.source_host": "10.98.98.75",
+        "audio.source_port": 11154,
+        "audio.source_user": "source",
+        "audio.encoder_profile": "aac_192",
+        "audio.public_listing": True,
         "audio.loudness_lufs": -16,
         "audio.true_peak_dbtp": -1,
         "audio.minimum_qwen_buffer": 5,
@@ -36,10 +41,15 @@ FROZEN_IDENTITIES: dict[str, dict[str, Any]] = {
         "timezone": "Europe/Istanbul",
         "public.route": "/ai/fr",
         "public.compatibility_routes": (),
-        "public.snapshot_endpoint": "/api/public/stations/radiotedu-fr/snapshot",
-        "public.status_endpoint": "/api/public/stations/radiotedu-fr/status",
-        "public.stream_url": "https://radiotedu.com:8001/radiotedu-fr",
-        "audio.stream_mount": "/radiotedu-fr",
+        "public.snapshot_endpoint": "/v1/radio/stations/radiotedu-fr/snapshot",
+        "public.status_endpoint": "/v1/radio/stations/radiotedu-fr/status",
+        "public.stream_url": "https://stream.radiotedu.com/fr",
+        "audio.stream_mount": "/fr",
+        "audio.source_host": "10.98.98.75",
+        "audio.source_port": 11154,
+        "audio.source_user": "source",
+        "audio.encoder_profile": "aac_192",
+        "audio.public_listing": True,
         "audio.loudness_lufs": -16,
         "audio.true_peak_dbtp": -1,
         "audio.minimum_qwen_buffer": 5,
@@ -82,6 +92,12 @@ def _integer(value: Any, label: str) -> int:
     return value
 
 
+def _boolean(value: Any, label: str) -> bool:
+    if type(value) is not bool:
+        raise StationProfileError(f"{label} must be a boolean")
+    return value
+
+
 def _lexical_path(value: str) -> PureWindowsPath:
     normalized = ntpath.normcase(ntpath.normpath(value.replace("/", "\\")))
     return PureWindowsPath(normalized)
@@ -113,6 +129,8 @@ def _validate(profile: StationProfile) -> None:
         raise StationProfileError("minimum_qwen_buffer must be at least 5")
     if (profile.audio.loudness_lufs, profile.audio.true_peak_dbtp) != (-16, -1):
         raise StationProfileError("audio targets must be -16 LUFS and -1 dBTP")
+    if profile.audio.source_port < 1 or profile.audio.source_port > 65535:
+        raise StationProfileError("audio.source_port must be a valid TCP port")
     if not profile.public.route.startswith("/") or not profile.audio.stream_mount.startswith("/"):
         raise StationProfileError("public route and stream mount must be absolute URL paths")
     for name in ("database", "announcement_root", "cache_root", "log_root"):
@@ -129,6 +147,11 @@ def _validate(profile: StationProfile) -> None:
         "public.status_endpoint": profile.public.status_endpoint,
         "public.stream_url": profile.public.stream_url,
         "audio.stream_mount": profile.audio.stream_mount,
+        "audio.source_host": profile.audio.source_host,
+        "audio.source_port": profile.audio.source_port,
+        "audio.source_user": profile.audio.source_user,
+        "audio.encoder_profile": profile.audio.encoder_profile,
+        "audio.public_listing": profile.audio.public_listing,
         "audio.loudness_lufs": profile.audio.loudness_lufs,
         "audio.true_peak_dbtp": profile.audio.true_peak_dbtp,
         "audio.minimum_qwen_buffer": profile.audio.minimum_qwen_buffer,
@@ -161,7 +184,17 @@ def load_station_profile(path: str | Path) -> StationProfile:
         "snapshot_secret_ref",
     }
     public_keys = {"route", "compatibility_routes", "snapshot_endpoint", "status_endpoint", "stream_url"}
-    audio_keys = {"stream_mount", "loudness_lufs", "true_peak_dbtp", "minimum_qwen_buffer"}
+    audio_keys = {
+        "stream_mount",
+        "loudness_lufs",
+        "true_peak_dbtp",
+        "minimum_qwen_buffer",
+        "source_host",
+        "source_port",
+        "source_user",
+        "encoder_profile",
+        "public_listing",
+    }
     runtime_keys = {"data_root", "database", "music_root", "announcement_root", "cache_root", "log_root"}
     _keys(raw, root_keys, "profile")
     public = _mapping(raw["public"], "public")
@@ -194,6 +227,11 @@ def load_station_profile(path: str | Path) -> StationProfile:
                 _integer(audio["loudness_lufs"], "audio.loudness_lufs"),
                 _integer(audio["true_peak_dbtp"], "audio.true_peak_dbtp"),
                 _integer(audio["minimum_qwen_buffer"], "audio.minimum_qwen_buffer"),
+                source_host=_string(audio["source_host"], "audio.source_host"),
+                source_port=_integer(audio["source_port"], "audio.source_port"),
+                source_user=_string(audio["source_user"], "audio.source_user"),
+                encoder_profile=_string(audio["encoder_profile"], "audio.encoder_profile"),
+                public_listing=_boolean(audio["public_listing"], "audio.public_listing"),
             ),
             runtime=RuntimeProfile(
                 *(_string(runtime[name], f"runtime.{name}") for name in (

@@ -74,7 +74,10 @@ class Settings:
     liquidsoap_host: str = "127.0.0.1"
     liquidsoap_port: int = 8001
     liquidsoap_mount: str = "/ai"
-    liquidsoap_icecast_password: str = "hackme"
+    liquidsoap_icecast_user: str = "source"
+    liquidsoap_icecast_password: str = ""
+    liquidsoap_encoder_profile: str = "aac_192"
+    liquidsoap_public: bool = True
     public_dashboard_enabled: bool = False
     public_dashboard_route: str = "/ai"
     public_stream_url: str = ""
@@ -90,6 +93,8 @@ class Settings:
     def __post_init__(self) -> None:
         if self.station_id not in ALLOWED_STATION_IDS:
             raise ValueError("station_id must be radiotedu-en or radiotedu-fr")
+        if self.liquidsoap_encoder_profile != "aac_192":
+            raise ValueError("liquidsoap_encoder_profile must be aac_192")
 
     @classmethod
     def from_env(cls, env_path: str | Path = ".env") -> "Settings":
@@ -139,7 +144,10 @@ class Settings:
             "liquidsoap_host": "LIQUIDSOAP_HOST",
             "liquidsoap_port": "LIQUIDSOAP_PORT",
             "liquidsoap_mount": "LIQUIDSOAP_MOUNT",
+            "liquidsoap_icecast_user": "LIQUIDSOAP_ICECAST_USER",
             "liquidsoap_icecast_password": "LIQUIDSOAP_ICECAST_PASSWORD",
+            "liquidsoap_encoder_profile": "LIQUIDSOAP_ENCODER_PROFILE",
+            "liquidsoap_public": "LIQUIDSOAP_PUBLIC",
             "public_dashboard_enabled": "PUBLIC_DASHBOARD_ENABLED",
             "public_dashboard_route": "PUBLIC_DASHBOARD_ROUTE",
             "public_stream_url": "PUBLIC_STREAM_URL",
@@ -165,8 +173,14 @@ class Settings:
                 raw = os.environ.get("ICECAST_PORT", env_file.get("ICECAST_PORT", raw))
             elif field.name == "liquidsoap_mount":
                 raw = os.environ.get("ICECAST_MOUNT", env_file.get("ICECAST_MOUNT", raw))
+            elif field.name == "liquidsoap_icecast_user":
+                raw = os.environ.get("ICECAST_SOURCE_USERNAME", env_file.get("ICECAST_SOURCE_USERNAME", raw))
             elif field.name == "liquidsoap_icecast_password":
                 raw = os.environ.get("ICECAST_PASSWORD", env_file.get("ICECAST_PASSWORD", raw))
+            elif field.name == "liquidsoap_encoder_profile":
+                raw = os.environ.get("ICECAST_ENCODER_PROFILE", env_file.get("ICECAST_ENCODER_PROFILE", raw))
+            elif field.name == "liquidsoap_public":
+                raw = os.environ.get("ICECAST_PUBLIC", env_file.get("ICECAST_PUBLIC", raw))
             if field.type in (int, "int"):
                 values[field.name] = int(raw)
             elif field.type in (bool, "bool"):
