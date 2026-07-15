@@ -13,7 +13,8 @@
   "stations": {
     "radiotedu-en": {
       "station_id": "radiotedu-en",
-      "service": "RadioTEDU.Station.EN",
+      "supervised_by": "RadioTEDU.BroadcastSupervisor",
+      "process": "backend-radiotedu-en",
       "root": "data/stations/radiotedu-en",
       "database": "data/stations/radiotedu-en/radio.db",
       "music_root": "media/stations/radiotedu-en/music",
@@ -28,7 +29,8 @@
     },
     "radiotedu-fr": {
       "station_id": "radiotedu-fr",
-      "service": "RadioTEDU.Station.FR",
+      "supervised_by": "RadioTEDU.BroadcastSupervisor",
+      "process": "backend-radiotedu-fr",
       "root": "data/stations/radiotedu-fr",
       "database": "data/stations/radiotedu-fr/radio.db",
       "music_root": "media/stations/radiotedu-fr/music",
@@ -48,11 +50,14 @@
       "station_database": null,
       "playout": false
     },
-    "RadioTEDU.PublicSync": {
-      "database": "data/public-sync/public-sync.db",
-      "direction": "outbound-only",
-      "can_control_playout": false,
-      "owns": ["sanitized_station_state", "outbox"]
+    "RadioTEDU.BroadcastSupervisor": {
+      "owns": ["station_processes", "public_sync"],
+      "child_processes": ["backend-radiotedu-en", "backend-radiotedu-fr"],
+      "public_sync": {
+        "database": "data/public-sync/public-sync.db",
+        "direction": "outbound-only",
+        "can_control_playout": false
+      }
     }
   }
 }

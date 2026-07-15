@@ -1,200 +1,99 @@
-# RadioTEDU Broadcast Server Codex Prompt
+# RadioTEDU Broadcast Computer — Codex Prompt
 
-You are Codex on the RadioTEDU broadcast computer.
+You are Codex on the RadioTEDU broadcasting computer. This computer is not the builder computer. The builder prepared and transferred an approved RadioTEDU revision; all runtime discovery, installation, protected configuration, staging, and verification happen here.
 
-Repository:
-https://github.com/akgularda/RadioTEDU
+## Objective
 
-Goal:
-Run the real RadioTEDU broadcast machine. This machine owns the music library, AI host, Qwen/Ollama, TTS, announcement prebuffer, playback, Liquidsoap/Icecast source, and snapshot push to the website server. It must stream to the `/ai` mount and push sanitized public state to `radiotedu.com/ai`.
+Prepare the real dual-station broadcast runtime without deploying or switching production traffic. English and French are isolated station child processes under one `RadioTEDU.BroadcastSupervisor`; each child owns its own orchestrator, database, queues, fallback playlist, Liquidsoap process, health, metadata, and logs. The supervisor owns exactly one process-level `PublicSyncService` for both stations.
 
-Machine boundary:
-- This prompt runs on the broadcast computer, not on the separate build workstation.
-- Clone or update the GitHub repository here and install the runtime dependencies here.
-- The current installer is a UI-shell-only build, not a working broadcast runtime: it omits the Python backend/runtime files, and its packaged `file://` frontend does not yet have a verified HTTP API origin. Do not deploy it for live operation until packaging and API-origin handling are fixed.
-- After any packaging fix, require an end-to-end packaged-app smoke test: launch the installed UI, confirm the UI itself renders live health from `/api/status` without `file://`/CORS errors, and verify a safe read-only admin view. A separate backend health probe alone is not sufficient.
-- Before running a supplied installer, verify its SHA-256 against the build handoff and inspect its Authenticode status. If it is unsigned, report that clearly and follow the operator's security policy; never disable system-wide protections.
-- The current source checkout is the authoritative live-operation path: the broadcast services and hardware integrations run from this repository unless a verified self-contained runtime package is supplied.
-- Never depend on the build workstation for music files, audio devices, AI/TTS, streaming, or website synchronization.
+Stop after staging and conformance verification. Do not start live air, replace a currently running service, or make a production cutover unless the operator explicitly authorizes it in this task.
 
-Secret handling:
-- Obtain every secret from the gitignored repo-root `.env` file or an externally injected service environment/secret store.
-- Never echo, paste into chat/output, log, or commit a secret; redact command output before sharing it.
-- Treat any credential that has ever been committed as compromised: rotate it at the owning service and update the runtime secret store without printing the old or new value.
+## Fixed contract
 
-Andon-inspired product target:
-- Preserve the repo's compact, single-channel, information-dense public listener experience inspired by Andon FM.
-- Keep the original RadioTEDU branding and do not copy Andon Labs branding, colors, assets, or exact layout.
+- Station IDs: `radiotedu-en`, `radiotedu-fr`
+- Languages: English (`en`), French (`fr`)
+- Icecast source: `10.98.98.75:11154`
+- Source username: `source`
+- Mounts: `/en`, `/fr`
+- Encoder: `aac_192`, AAC-LC 192 kbps
+- Liquidsoap encoder: `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`
+- Directory listing: `public=true`
+- Public players: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
+- Platform API: `https://api.radiotedu.com`
+- Service identity: `school-radio-pc`
+- Scope: `agent:playout`
+- Snapshot heartbeat: 10 seconds
+- Public UI routes: `/ai`, `/ai/en`, `/ai/fr`; the broadcast computer does not host them.
 
-Repository setup:
-1. Clone the repository if absent, then fetch without deploying a mutable branch tip:
-   ```bash
-   git clone https://github.com/akgularda/RadioTEDU
-   cd RadioTEDU
-   git fetch --tags --prune
-   git status --short
-   git checkout --detach <approved-release-tag-or-full-commit-sha>
-   git rev-parse HEAD
-   ```
-   Stop if the tree is dirty or the approved revision is unavailable. Record the full deployed SHA and the currently known-good rollback SHA. Never update the working tree that currently owns live air; stage and verify a separate checkout before cutover.
+The Icecast host is intentionally shared and is one acknowledged failure domain. Do not merge station runtime state merely because the source host is shared.
 
-2. Create `.env` from `.env.example` if needed.
+## Secret handling
 
-Core config:
-```env
-MUSIC_DIR=F:/Songs/Jazz
-OLLAMA_MODEL=qwen3.5:4b
-OLLAMA_URL=http://127.0.0.1:11434
-PLAYBACK_BACKEND=liquidsoap
-AUTONOMY_ENABLED=true
-MIN_READY_ANNOUNCEMENTS=5
-MAX_READY_ANNOUNCEMENTS=8
-NEWS_ENABLED=true
-WEATHER_ENABLED=true
-```
+- The source credential previously supplied during development is compromised because it was shared in a task transcript. Require it to be rotated before any production use.
+- Obtain the rotated source credential and the two per-station HMAC secrets only from the target machine's protected secret store or ACL-restricted service environment.
+- Bind them through `RADIOTEDU_EN_SOURCE_CREDENTIALS`, `RADIOTEDU_FR_SOURCE_CREDENTIALS`, `RADIOTEDU_EN_SNAPSHOT_SECRET`, and `RADIOTEDU_FR_SNAPSHOT_SECRET`.
+- Never print secret values, put them in shell history, paste them into Codex, write them to the repository, include them in evidence, or log them.
+- Give each station child only its own Icecast source credential. HMAC secrets remain with the supervisor's `PublicSyncService` and must not enter station child environments.
 
-TTS:
-```env
-TTS_PROVIDER=qwen
-QWEN_TTS_COMMAND=<your real Qwen TTS command wrapper>
-FALLBACK_TTS_PROVIDER=sapi
-```
+## Repository and staging procedure
 
-Liquidsoap/Icecast:
-```env
-LIQUIDSOAP_ENABLED=true
-LIQUIDSOAP_QUEUE_PATH=data/liquidsoap/queue.m3u
-LIQUIDSOAP_SCRIPT_PATH=data/liquidsoap/radiotedu.liq
-LIQUIDSOAP_COMMAND=liquidsoap
-LIQUIDSOAP_HOST=<correct Icecast host/IP>
-LIQUIDSOAP_PORT=8001
-LIQUIDSOAP_MOUNT=/ai
-LIQUIDSOAP_ICECAST_PASSWORD=<existing Icecast source password>
-ICECAST_HOST=<correct Icecast host/IP>
-ICECAST_PORT=8001
-ICECAST_MOUNT=/ai
-ICECAST_PASSWORD=<same Icecast source password>
-```
+1. Inspect the transferred repository and record `git rev-parse HEAD`, branch/tag, `git status --short`, and the known-good rollback SHA. Do not deploy a mutable branch tip. Do not discard local operator data.
+2. Confirm this revision contains:
+   - `scripts/run_station_forever.py`
+   - `backend/public_sync.py`
+   - `config/deployment/dual-station.json`
+   - `config/stations/radiotedu-en.json`
+   - `config/stations/radiotedu-fr.json`
+   - `packaging/broadcast/`
+3. Create an isolated Python environment and install the approved locked dependencies. Use `npm ci` for the checked-in frontend dependencies if frontend verification is performed. Do not weaken endpoint protection, antivirus, or signing policies.
+4. Copy the service environment examples into `C:\ProgramData\RadioTEDU\config`, apply ACLs for the service identity and administrators, then inject secrets without revealing them.
+5. Configure the real station media roots. Preserve separate EN/FR databases, queues, announcement caches, fallback playlists, and log roots. Do not invent tracks, artists, play events, listener counts, or program data.
+6. Verify Qwen/Ollama and TTS remain loopback-only and that each station has at least `MIN_READY_ANNOUNCEMENTS=5` prepared items before any live-air authorization.
+7. Verify the installed Liquidsoap build advertises FDK-AAC. Treat missing FDK-AAC as a hard preflight failure; do not fall back to MP3 or another AAC encoder.
+8. Render both Liquidsoap configs and inspect redacted output for the exact host, port, source username, mount, AAC-LC encoder, 192 kbps, metadata, and public listing. No password may appear in evidence or logs.
+9. Run the two Windows services from `packaging/broadcast`: `RadioTEDU.SharedAI` and `RadioTEDU.BroadcastSupervisor`. Do not recreate separate EN, FR, or PublicSync Windows services.
 
-External broadcast prerequisites:
-- Install/provision Liquidsoap separately; confirm the configured `LIQUIDSOAP_COMMAND` resolves and report its version.
-- Install or reach a separately managed Icecast server; confirm its host/port, `/ai` mount, and matching source credential from the runtime secret store.
-- Confirm the broadcast computer can reach Icecast and that the website's HTTPS stream proxy can reach the mount.
-- Run `/api/liquidsoap/verify` successfully before `/api/liquidsoap/start` or `/api/air/start`. Do not go live when any prerequisite is missing.
+## Public synchronization contract
 
-Website sync:
-```env
-PUBLIC_SYNC_URL=https://radiotedu.com/api/public/snapshot
-PUBLIC_SYNC_TOKEN=<same shared secret configured on website server>
-PUBLIC_STREAM_URL=https://radiotedu.com/live.mp3
-PUBLIC_SYNC_INTERVAL_SECONDS=10
-```
+The one `PublicSyncService` consumes station events but never selects music, calls Liquidsoap, exposes a control endpoint, or blocks playout. It must:
 
-Admin API protection:
-```env
-API_HOST=127.0.0.1
-ADMIN_API_TOKEN=
-```
+- push immediately on track, program, speech-status, or stream-state changes;
+- send a 10-second heartbeat;
+- persist play events and cover uploads in a durable SQLite outbox;
+- coalesce unsent snapshots to the newest station state;
+- retry with full-jitter exponential backoff from 1 to 60 seconds;
+- preserve station ordering and independent station sequence numbers.
 
-An empty token is allowed only while the API is strictly loopback-only and blocked from remote access by the host firewall. If the API must bind beyond loopback, stop first: generate a strong out-of-repo token, securely provision the same value to the admin client's `radiotedu_admin_token` local-storage key on the trusted operator machine, restrict the firewall/proxy to trusted operator addresses, and verify unauthenticated mutations return `401` while authorized controls work. The current UI has no token-settings screen, so do not expose it remotely until that provisioning is completed and tested.
+Use only these versioned endpoints:
 
-Important network task:
-Find the correct IP address for the Broadcast Wall app / Icecast source target.
-- Inspect the machine network interfaces.
-- Determine which IP the Broadcast Wall app or Icecast server expects.
-- Use that IP for `LIQUIDSOAP_HOST` / `ICECAST_HOST` if Icecast is not local.
-- Confirm the mount is exactly `/ai`.
-- Confirm the configured source password matches the Icecast server; do not print or commit it.
-- Confirm the website server exposes the Icecast `/ai` mount through the HTTPS `PUBLIC_STREAM_URL`; do not send browsers to a plain-HTTP IP/port stream.
-- Do not guess silently. Log the detected candidate IPs and choose the reachable one.
-- If multiple candidates exist, test connectivity to the Icecast port and use the reachable one.
+- `POST /v1/radio/stations/{station_id}/snapshot`
+- `POST /v1/radio/stations/{station_id}/plays`
+- `PUT /v1/radio/stations/{station_id}/covers/{cover_id}`
+- `GET /v1/radio/stations/{station_id}/status`
 
-Install/verify in an isolated environment. `requirements.txt` contains open-ended bounds and is not a production lock; require an approved pinned, hash-verified Python lock that includes the test tools before live cutover. If it is absent, stop and report the blocker.
-```bash
-python -m venv .venv
-# Activate .venv for this operating system before continuing.
-python -m pip install --require-hashes -r <approved-python-lock-file>
-npm ci
-python scripts/check_ollama.py --install --start --pull
-python scripts/scan_music.py
-python -m pytest tests/backend -q
+Every write includes `X-RadioTEDU-Agent-ID`, timestamp, nonce, signature, `Idempotency-Key`, and `X-Correlation-ID`. The HMAC binds method, versioned path, agent ID, station ID, timestamp, nonce, idempotency key, correlation ID, and body hash. Never use the old shared-token snapshot endpoint.
+
+## Required verification
+
+Run and retain redacted results for:
+
+```powershell
+python -m pytest -q
 npm test
 npm run build
+python scripts/smoke_broadcast.py --strict --json
+python scripts/check_icecast.py
 ```
 
-Source runtime startup:
-1. Run the live backend independently of the admin window under the repo's watchdog (or an equivalent Windows service/scheduled task):
-   ```bash
-   python scripts/run_station_forever.py --root <absolute-path-to-RadioTEDU>
-   ```
-2. Wait for `http://127.0.0.1:8000/api/status` to return `200` before calling any control endpoint.
-3. Launch the source admin UI as a client of that supervised backend. On PowerShell:
-   ```powershell
-   $env:RADIOTEDU_MANAGE_BACKEND='0'
-   npm run desktop:dev
-   ```
-   On Bash:
-   ```bash
-   RADIOTEDU_MANAGE_BACKEND=0 npm run desktop:dev
-   ```
-4. Verify the admin UI can read `/api/status`. Closing the admin window must not stop the supervised live backend.
-5. Use plain `npm run desktop:dev` (which manages its own backend) only for setup/interactive testing, never as the sole owner of a 24/7 live broadcast.
+Before accepting staging, also prove:
 
-Cutover and rollback:
-- Stage the approved revision, isolated Python environment, Node dependencies, and config in a separate checkout while the known-good revision remains untouched.
-- Run the full tests, `python scripts/run_broadcast_computer.py --check-only`, `python scripts/smoke_broadcast.py --json`, TTS test, Liquidsoap verification, website-sync check, and a non-air admin UI check before the maintenance window.
-- Record the old service command, full rollback SHA, environment/config backup location, and rollback health checklist.
-- Switch the supervised service only during an approved maintenance window. If backend health, audio output, Icecast mount, snapshot sync, or admin control fails, stop the new service, restore the previous checkout/environment/service command, restart it, and re-run the rollback health checklist before resuming air.
+- exact `/en` and `/fr` configs use AAC-LC 192 kbps, `source`, and `public=true`;
+- EN and FR child environments do not contain the other station's source credential and contain no HMAC secrets;
+- station-local orchestrators start independently and one child can be restarted without stopping the other;
+- one and only one `PublicSyncService` owns the outbox;
+- a simulated website outage does not interrupt playout and queued events recover in order;
+- snapshot coalescing, play replay, and 1–60 second jittered retry work;
+- public payloads contain no paths, secrets, logs, incidents, browser identity, operator tasks, or private metadata;
+- no generated file contains the previously shared source credential.
 
-Broadcast workflow:
-1. Start or verify Ollama.
-2. Pull/verify `qwen3.5:4b`.
-3. Scan `MUSIC_DIR=F:/Songs/Jazz`.
-4. Confirm playable tracks > 0.
-5. Render Liquidsoap config:
-   `POST /api/liquidsoap/render`
-6. Verify Liquidsoap/Icecast:
-   `POST /api/liquidsoap/verify`
-   This must confirm:
-   - queue file is readable
-   - script references queue
-   - Icecast mount `/ai` is reachable/active when running
-7. Start Icecast/Liquidsoap output:
-   `POST /api/liquidsoap/start`
-8. Start air:
-   `POST /api/air/start`
-
-Hard broadcast constraints:
-- Exactly one channel: RadioTEDU.
-- Programs are schedule blocks, not stations.
-- Never invent tracks, artists, play history, listener counts, analytics, donation/support data, or financial features.
-- Use real files from `F:/Songs/Jazz`.
-- Maintain 5-8 prepared announcements.
-- Do not block live playback waiting for the 4B model.
-- Generate announcements 4-5 songs ahead.
-- If AI is unavailable, try to start/fix/pull Ollama/Qwen instead of silently living in fallback.
-- Fallback is dead-air prevention only.
-- Weather/news/song-context announcements must be sourced. Do not invent facts.
-- Snapshot push must never include local paths, secrets, logs, incidents, internal task details, or generated private file paths.
-
-Admin app:
-- Run the local admin dashboard.
-- Use it to see health, prebuffer, TTS, Liquidsoap, website sync, fallback playlist, weekly strategy, and logs.
-- Use Run Air / Stop Air / Skip / Rescan from the admin app.
-- Use Verify Icecast Air before going live.
-- Use Clip Latest Segment only for real generated clips.
-
-Public sync:
-- Every few seconds, push sanitized status to `https://radiotedu.com/api/public/snapshot`.
-- Header: `X-RadioTEDU-Sync-Token: <shared secret>`.
-- If website sync fails, keep local broadcast running and log locally only.
-
-Final verification:
-- `/api/status` shows music indexed.
-- `/api/status` shows prebuffer ready >= 5.
-- `/api/liquidsoap/verify` reports queue readable.
-- Icecast `/ai` mount is reachable.
-- `/api/air/start` starts without dead air.
-- `https://radiotedu.com/ai` shows real now-playing after snapshot sync.
-- No local file paths appear on `radiotedu.com/ai`.
-- No fake or financial fields appear anywhere public.
+Report the staged revision, commands, pass/fail evidence, unresolved blockers, and exact actions still requiring production authorization. Never claim production readiness from unit tests alone.

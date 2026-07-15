@@ -170,14 +170,34 @@ def _record_restart(state: ProcessState, now: float) -> None:
     state.next_start_at = now + RESTART_DELAYS_SECONDS[delay_index]
 
 
+def process_environment(spec: ProcessSpec, inherited: dict[str, str]) -> dict[str, str]:
+    """Give each child only its own Icecast source credential and no HMAC secret."""
+    environment = {**inherited, **spec.environment}
+    source_names = {
+        "radiotedu-en": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
+        "radiotedu-fr": "RADIOTEDU_FR_SOURCE_CREDENTIALS",
+    }
+    selected_source = next(
+        (name for station_id, name in source_names.items() if spec.name == f"backend-{station_id}"),
+        None,
+    )
+    selected_value = inherited.get(selected_source, "") if selected_source else ""
+    for secret_name in (
+        *source_names.values(),
+        "RADIOTEDU_EN_SNAPSHOT_SECRET",
+        "RADIOTEDU_FR_SNAPSHOT_SECRET",
+    ):
+        environment.pop(secret_name, None)
+    if selected_source and selected_value:
+        environment[selected_source] = selected_value
+    return environment
+
+
 def _start(spec: ProcessSpec, state: ProcessState, now: float) -> None:
     spec.stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stdout = spec.stdout_path.open("ab")
     stderr = spec.stderr_path.open("ab")
-    environment = {**os.environ, **spec.environment}
-    for secret_name in ("RADIOTEDU_EN_SNAPSHOT_SECRET", "RADIOTEDU_FR_SNAPSHOT_SECRET"):
-        if secret_name not in spec.environment:
-            environment.pop(secret_name, None)
+    environment = process_environment(spec, dict(os.environ))
     state.process = subprocess.Popen(
         spec.command,
         cwd=spec.cwd,

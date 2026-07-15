@@ -1,25 +1,13 @@
-param(
-  [string]$RepoUrl = "https://github.com/akgularda/RadioTEDU",
-  [string]$TargetDir = "$PWD\RadioTEDU"
-)
+param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path)
 
 $ErrorActionPreference = "Stop"
+$prompt = Join-Path $ProjectRoot "handoff\web-server\prompt.md"
+if (-not (Test-Path -LiteralPath $prompt -PathType Leaf)) { throw "Missing website Codex prompt: $prompt" }
 
-if (Test-Path -LiteralPath $TargetDir) {
-  Set-Location -LiteralPath $TargetDir
-  git pull --ff-only
-} else {
-  git clone $RepoUrl $TargetDir
-  Set-Location -LiteralPath $TargetDir
-}
-
-if (-not (Test-Path -LiteralPath ".env") -and (Test-Path -LiteralPath ".env.example")) {
-  Copy-Item ".env.example" ".env"
-}
-
+Set-Location -LiteralPath $ProjectRoot
+Write-Host "RadioTEDU website-server handoff (read-only starter)."
+if (Test-Path -LiteralPath ".git") { Write-Host "Transferred revision: $(& git rev-parse HEAD)" }
+Write-Host "Open the following prompt in Codex on this target computer:"
+Write-Host $prompt
 Write-Host ""
-Write-Host "RadioTEDU website server starter is ready."
-Write-Host "Open this prompt in Codex and execute it:"
-Write-Host (Resolve-Path "handoff\web-server\prompt.md")
-Write-Host ""
-Get-Content -Raw "handoff\web-server\prompt.md"
+Get-Content -Raw -LiteralPath $prompt

@@ -1,139 +1,47 @@
 # RadioTEDU Website Server Runbook
 
-This machine hosts the public listener page at `radiotedu.com/ai`. It receives
-sanitized snapshots from the broadcast computer and tracks real public listener
-sessions. It does not own the music library and it does not control playback.
+This runbook applies only to the website/API server. It runs the public-only `backend.public_app`; it must not run the broadcast/operator `backend.app`.
 
-## Hard Rules
+## Public routes
 
-- Not Streamlit.
-- Use the FastAPI backend and React/Vite frontend from this repository.
-- Exactly one public channel card: RadioTEDU.
-- No admin controls.
-- No start, stop, skip, rescan, Test TTS, strategy, incident, or log views.
-- No local file paths, secrets, private task details, or internal logs.
-- No financial features or money-like stats.
-- No synthetic listener counts, synthetic play history, invented songs, or invented now-playing data.
-- If snapshots expire, show an honest offline or waiting state.
+- `/ai` — English compatibility entry
+- `/ai/en` — English listener page
+- `/ai/fr` — French listener page
+- `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr` — public TLS players
+- `https://api.radiotedu.com` — canonical platform API
 
-## Setup
+The stream proxy forwards `/en` and `/fr` to the corresponding private mounts at `10.98.98.75:11154`. It must not expose Icecast admin/source interfaces.
 
-Clone or pull the repository:
+## Public-only API
 
-```bash
-git clone https://github.com/akgularda/RadioTEDU.git /opt/RadioTEDU
-cd /opt/RadioTEDU
-```
+Canonical endpoints are:
 
-Create `.env` from `.env.example`, then set:
+- `POST /v1/radio/stations/{station_id}/snapshot`
+- `POST /v1/radio/stations/{station_id}/plays`
+- `PUT /v1/radio/stations/{station_id}/covers/{cover_id}`
+- `GET /v1/radio/stations/{station_id}/status`
+- station-scoped `/sessions/start`, `/sessions/heartbeat`, and `/sessions/end`
 
-```env
-PUBLIC_DASHBOARD_ENABLED=true
-PUBLIC_DASHBOARD_ROUTE=/ai
-PUBLIC_SYNC_TOKEN=replace-with-shared-secret
-PUBLIC_STREAM_URL=https://radiotedu.com/ai
-SNAPSHOT_TTL_SECONDS=30
-AUTONOMY_ENABLED=false
-PLAYBACK_BACKEND=simulate
-```
+Broadcast writes authenticate as `school-radio-pc` with `agent:playout` and distinct per-station HMAC secrets. Enforce 256 KiB snapshots, `SNAPSHOT_TTL_SECONDS=30`, 60-second skew, nonce replay protection, monotonic sequence, idempotency, constant-time verification, private-field rejection, redacted errors, and correlation IDs.
 
-Install and verify:
+New deployments set `PUBLIC_COMPATIBILITY_ENABLED=false`. If an approved compatibility window enables the English `/api/public/status` and session adapter, it must read canonical storage and emit deprecation/sunset headers. The legacy shared-token snapshot write is not part of the public app.
+
+## Listener page boundary
+
+Pages contain only player, now playing, current/next program, active website listeners, rolling 14-day music/talking percentages, and curated sound-character tags. No playout controls, admin, contact, messaging, calls, purchasing, wallet, rewards, voting, social posting, or sharing is allowed.
+
+Session storage is station-scoped and stores no IP, user agent, fingerprint, or browser identity. The airtime split excludes silence/unknown and shows unavailable when no classified duration exists. Sound labels use only the curated `warm`, `bright`, `calm`, `focused`, and `energetic` allowlist.
+
+## Staging
 
 ```bash
-pip install -r requirements.txt
-npm install
-python -m pytest tests/backend -q
+python -m pytest -q
 npm test
 npm run build
+python -m backend.public_app
+python scripts/smoke_public_server.py --base-url http://127.0.0.1:<staging-port> --strict --json
 ```
 
-## Public API
+Verify `/ai`, `/ai/en`, `/ai/fr`, localized labels, keyboard focus, responsive layout, fresh/stale/no-data behavior, last-valid-snapshot preservation, station session isolation, and HTTPS AAC browser playback. Inspect public OpenAPI for forbidden capabilities.
 
-The website server exposes public-safe endpoints:
-
-```text
-POST /api/public/snapshot
-GET /api/public/status
-POST /api/public/session/start
-POST /api/public/session/heartbeat
-POST /api/public/session/end
-```
-
-Snapshot writes must include:
-
-```text
-X-RadioTEDU-Sync-Token: <shared secret>
-```
-
-Missing or wrong token requests must be rejected. Public reads must never return
-private fields from the broadcast computer.
-
-## Session Metrics
-
-Listener metrics are real-only:
-
-- Current listeners come from active browser sessions.
-- Average session length comes from ended real sessions.
-- Popularity is derived from real engagement or shown as `No data`.
-- No synthetic counters or filler values.
-
-## Public Page
-
-The listener page at `radiotedu.com/ai` should be a compact Andon-style public
-card for one station:
-
-- RadioTEDU logo and cover image.
-- Live stream player using `PUBLIC_STREAM_URL`.
-- Live dot when the fresh snapshot says the broadcast is live.
-- Now playing.
-- Current program and next schedule.
-- Schedule progress.
-- Top songs and top genres from real play history.
-- Real listener/session stats.
-- Offline/waiting state when no fresh snapshot exists.
-
-No admin controls means no operator buttons, logs, paths, incidents, internal
-health details, or autonomy controls appear on this page.
-
-## Deployment Shape
-
-Run FastAPI behind the production web server and serve the Vite build for `/ai`.
-The same domain should proxy API calls to FastAPI so the frontend can call:
-
-```text
-/api/public/status
-/api/public/session/start
-/api/public/session/heartbeat
-/api/public/session/end
-```
-
-Allow the broadcast computer to reach:
-
-```text
-POST /api/public/snapshot
-```
-
-Use TLS on the public domain. Keep `PUBLIC_SYNC_TOKEN` server-side only.
-
-## Smoke Test
-
-After deployment, run:
-
-```bash
-python scripts/smoke_public_server.py --base-url https://radiotedu.com --token "$PUBLIC_SYNC_TOKEN" --json
-```
-
-Expected results:
-
-- `/api/public/status` is reachable.
-- `session/start`, heartbeat, and end work.
-- A valid snapshot token is accepted.
-- A wrong token is rejected.
-- Expired snapshots show offline/waiting state in public JSON.
-
-## Troubleshooting
-
-- If the page is offline, check whether the broadcast computer is pushing fresh snapshots.
-- If listener counts do not move, inspect session endpoint proxying.
-- If the stream player fails, check `PUBLIC_STREAM_URL` and the Icecast `/ai` mount.
-- If snapshot POST returns unauthorized, rotate and match `PUBLIC_SYNC_TOKEN` on both machines.
+Store HMAC verification secrets only in the website secret manager. This server must never receive the Icecast source password. Record the staged SHA, proxy/TLS config, rollback SHA, and redacted conformance results. Do not switch production traffic without explicit authorization.

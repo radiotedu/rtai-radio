@@ -1,24 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/akgularda/RadioTEDU}"
-TARGET_DIR="${TARGET_DIR:-$PWD/RadioTEDU}"
-
-if [ -d "$TARGET_DIR/.git" ]; then
-  cd "$TARGET_DIR"
-  git pull --ff-only
-else
-  git clone "$REPO_URL" "$TARGET_DIR"
-  cd "$TARGET_DIR"
-fi
-
-if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-  cp ".env.example" ".env"
-fi
-
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+PROMPT="$PROJECT_ROOT/handoff/broadcast-server/prompt.md"
+test -f "$PROMPT" || { echo "Missing broadcast Codex prompt: $PROMPT" >&2; exit 1; }
+cd "$PROJECT_ROOT"
+echo "RadioTEDU broadcast-computer handoff (read-only starter)."
+if test -d .git; then echo "Transferred revision: $(git rev-parse HEAD)"; fi
+echo "Open the following prompt in Codex on this target computer:"
+echo "$PROMPT"
 echo
-echo "RadioTEDU broadcast server starter is ready."
-echo "Open this prompt in Codex and execute it:"
-echo "$(pwd)/handoff/broadcast-server/prompt.md"
-echo
-cat "handoff/broadcast-server/prompt.md"
+cat "$PROMPT"

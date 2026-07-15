@@ -35,18 +35,21 @@ def check_icecast(url: str, timeout: float = 5.0) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check whether an Icecast mount is reachable.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--mount", default="/ai")
+    parser = argparse.ArgumentParser(description="Check the canonical RadioTEDU Icecast mounts.")
+    parser.add_argument("--host", default="10.98.98.75")
+    parser.add_argument("--port", type=int, default=11154)
+    parser.add_argument("--mount", action="append", default=[])
     parser.add_argument("--url", default="")
     args = parser.parse_args()
 
-    mount = args.mount if args.mount.startswith("/") else f"/{args.mount}"
-    url = args.url or f"http://{args.host}:{args.port}{mount}"
-    result = check_icecast(url)
-    print(json.dumps(result, ensure_ascii=True))
-    return 0 if result["reachable"] and result["mount_active"] else 1
+    if args.url:
+        results = [check_icecast(args.url)]
+    else:
+        mounts = args.mount or ["/en", "/fr"]
+        normalized = [mount if mount.startswith("/") else f"/{mount}" for mount in mounts]
+        results = [check_icecast(f"http://{args.host}:{args.port}{mount}") for mount in normalized]
+    print(json.dumps({"host": args.host, "port": args.port, "mounts": results}, ensure_ascii=True))
+    return 0 if all(result["reachable"] and result["mount_active"] for result in results) else 1
 
 
 if __name__ == "__main__":

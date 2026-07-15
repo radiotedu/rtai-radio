@@ -25,16 +25,17 @@ def test_deployment_contract_keeps_station_roots_databases_and_mounts_distinct()
     contract = _read_json(DEPLOYMENT_CONTRACT)
 
     assert contract["contract_version"] == 1
-    for station_id, service_name in (
-        ("radiotedu-en", "RadioTEDU.Station.EN"),
-        ("radiotedu-fr", "RadioTEDU.Station.FR"),
+    for station_id, process_name in (
+        ("radiotedu-en", "backend-radiotedu-en"),
+        ("radiotedu-fr", "backend-radiotedu-fr"),
     ):
         station = _station(contract, station_id)
         profile = _read_json(ROOT / "config" / "stations" / f"{station_id}.json")
         runtime = profile["runtime"]
         audio = profile["audio"]
 
-        assert station["service"] == service_name
+        assert station["supervised_by"] == "RadioTEDU.BroadcastSupervisor"
+        assert station["process"] == process_name
         assert station["root"] == runtime["data_root"]
         assert station["database"] == runtime["database"]
         assert station["music_root"] == runtime["music_root"]
@@ -95,19 +96,21 @@ def test_deployment_contract_uses_one_acknowledged_shared_icecast_failure_domain
     assert len(listener_endpoints) == len(set(listener_endpoints))
 
 
-def test_deployment_contract_reserves_shared_ai_and_public_sync_ownership_boundaries() -> None:
+def test_deployment_contract_reserves_shared_ai_and_supervisor_ownership_boundaries() -> None:
     contract = _read_json(DEPLOYMENT_CONTRACT)
     services = contract["services"]
     assert isinstance(services, dict)
 
     shared_ai = services["RadioTEDU.SharedAI"]
-    public_sync = services["RadioTEDU.PublicSync"]
+    supervisor = services["RadioTEDU.BroadcastSupervisor"]
     assert isinstance(shared_ai, dict)
-    assert isinstance(public_sync, dict)
+    assert isinstance(supervisor, dict)
 
     assert shared_ai["owns"] == ["ollama", "qwen", "model_leases"]
     assert shared_ai["station_database"] is None
     assert shared_ai["playout"] is False
-    assert public_sync["database"] == "data/public-sync/public-sync.db"
-    assert public_sync["direction"] == "outbound-only"
-    assert public_sync["can_control_playout"] is False
+    assert supervisor["owns"] == ["station_processes", "public_sync"]
+    assert supervisor["child_processes"] == ["backend-radiotedu-en", "backend-radiotedu-fr"]
+    assert supervisor["public_sync"]["database"] == "data/public-sync/public-sync.db"
+    assert supervisor["public_sync"]["direction"] == "outbound-only"
+    assert supervisor["public_sync"]["can_control_playout"] is False

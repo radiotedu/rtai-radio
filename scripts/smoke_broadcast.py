@@ -36,6 +36,13 @@ def build_report(settings: Settings) -> dict:
     ollama = check_ollama_setup(settings)
     stream = liquidsoap_status(settings)
     public_sync_url = settings.public_sync_url
+    public_sync_configured = bool(
+        public_sync_url == "https://api.radiotedu.com"
+        and settings.platform_agent_id == "school-radio-pc"
+        and settings.platform_agent_scope == "agent:playout"
+        and settings.platform_hmac_secret_en
+        and settings.platform_hmac_secret_fr
+    )
     tts = build_tts_provider(
         coerce_station_context(settings),
         os.environ.get("QWEN_TTS_SERVICE_URL", "http://127.0.0.1:8090"),
@@ -53,9 +60,14 @@ def build_report(settings: Settings) -> dict:
         "tts": tts,
         "liquidsoap": stream,
         "public_sync": {
-            "configured": bool(public_sync_url and settings.public_sync_token),
+            "configured": public_sync_configured,
             "public_sync_url": public_sync_url,
-            "stream_url": settings.public_stream_url,
+            "agent_id": settings.platform_agent_id,
+            "scope": settings.platform_agent_scope,
+            "station_secrets_configured": {
+                "radiotedu-en": bool(settings.platform_hmac_secret_en),
+                "radiotedu-fr": bool(settings.platform_hmac_secret_fr),
+            },
         },
     }
 

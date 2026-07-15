@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$services = @("RadioTEDU.SharedAI", "RadioTEDU.Station.EN", "RadioTEDU.Station.FR", "RadioTEDU.PublicSync")
+$services = @("RadioTEDU.SharedAI", "RadioTEDU.BroadcastSupervisor")
 $runner = Join-Path $PSScriptRoot "run-service.ps1"
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -37,7 +37,7 @@ foreach ($service in $services) {
         & sc.exe create $service binPath= $binaryPath start= auto obj= "LocalSystem" | Out-Null
         & sc.exe failure $service reset= 600 actions= restart/2000/restart/4000/restart/8000 | Out-Null
         & sc.exe failureflag $service 1 | Out-Null
-        & sc.exe description $service "RadioTEDU independently supervised broadcast service" | Out-Null
+        & sc.exe description $service "RadioTEDU shared AI or dual-station broadcast supervisor" | Out-Null
     }
 }
 

@@ -1,18 +1,12 @@
-# RadioTEDU Windows broadcast-service beta package
+# RadioTEDU Windows broadcast services
 
-This package installs four independently supervised Windows services:
+This package installs two Windows services:
 
-- `RadioTEDU.SharedAI` — loopback Ollama and Qwen only; no station database or playout.
-- `RadioTEDU.Station.EN` — EN-only database, queue, cache, Liquidsoap child, and source credentials.
-- `RadioTEDU.Station.FR` — FR-only database, queue, cache, Liquidsoap child, and source credentials.
-- `RadioTEDU.PublicSync` — the outbound-only, sanitized public-state service.
+- `RadioTEDU.SharedAI` owns loopback-only Ollama and Qwen TTS.
+- `RadioTEDU.BroadcastSupervisor` starts, monitors, and independently recovers the EN and FR station child processes. The same supervisor process owns the single outbound-only `PublicSyncService` and durable outbox.
 
-Run `install-services.ps1` in an elevated PowerShell after creating the four
-environment files in `C:\ProgramData\RadioTEDU\config`.  The installer creates
-services but deliberately does not start them unless `-Start` is supplied.
-Starting is only permitted after the broadcast readiness and service checks have
-passed on the target machine.
+Create the two protected environment files in `C:\ProgramData\RadioTEDU\config` from the examples. Restrict their ACLs to the service identity and administrators; never put source credentials or HMAC secrets in the repository, prompt, command history, or logs.
 
-Do not add another station's source credentials, snapshot secret, queue path,
-or database path to either station environment file.  The installer records
-independent restart policies; failure of EN cannot restart FR, and vice versa.
+Run `install-services.ps1` from elevated PowerShell. The installer creates services without starting them unless `-Start` is supplied. Use `-Start` only on the target broadcast computer after staging preflight, FDK-AAC verification, separate `/en` and `/fr` mount checks, and API conformance tests pass.
+
+Both stations intentionally share the Icecast host at `10.98.98.75:11154`. Station processes, queues, databases, and recovery remain isolated, but the Icecast host is one acknowledged failure domain.

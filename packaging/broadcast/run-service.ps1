@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("RadioTEDU.SharedAI", "RadioTEDU.Station.EN", "RadioTEDU.Station.FR", "RadioTEDU.PublicSync")]
+    [ValidateSet("RadioTEDU.SharedAI", "RadioTEDU.BroadcastSupervisor")]
     [string]$ServiceName,
     [Parameter(Mandatory = $true)]
     [string]$ProjectRoot,
@@ -56,17 +56,15 @@ switch ($ServiceName) {
             if ($null -ne $ollama -and -not $ollama.HasExited) { Stop-Process -Id $ollama.Id -Force }
         }
     }
-    "RadioTEDU.Station.EN" {
-        if ($env:STATION_ID -ne "radiotedu-en" -or $env:API_PORT -ne "8765") { throw "EN service has an invalid station scope" }
-        if ($env:RADIOTEDU_FR_SOURCE_CREDENTIALS -or $env:RADIOTEDU_FR_SNAPSHOT_SECRET) { throw "EN service contains FR state" }
-        Invoke-Python @("-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", "8765")
-    }
-    "RadioTEDU.Station.FR" {
-        if ($env:STATION_ID -ne "radiotedu-fr" -or $env:API_PORT -ne "8766") { throw "FR service has an invalid station scope" }
-        if ($env:RADIOTEDU_EN_SOURCE_CREDENTIALS -or $env:RADIOTEDU_EN_SNAPSHOT_SECRET) { throw "FR service contains EN state" }
-        Invoke-Python @("-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", "8766")
-    }
-    "RadioTEDU.PublicSync" {
-        Invoke-Python @("-m", "scripts.run_public_sync_service")
+    "RadioTEDU.BroadcastSupervisor" {
+        if ($env:RADIOTEDU_AGENT_ID -ne "school-radio-pc") { throw "Broadcast supervisor has an invalid agent identity" }
+        if ($env:RADIOTEDU_AGENT_SCOPE -ne "agent:playout") { throw "Broadcast supervisor has an invalid agent scope" }
+        if (-not $env:RADIOTEDU_EN_SOURCE_CREDENTIALS -or -not $env:RADIOTEDU_FR_SOURCE_CREDENTIALS) {
+            throw "Broadcast supervisor requires protected source credentials for both mounts"
+        }
+        if (-not $env:RADIOTEDU_EN_SNAPSHOT_SECRET -or -not $env:RADIOTEDU_FR_SNAPSHOT_SECRET) {
+            throw "Broadcast supervisor requires per-station HMAC secrets"
+        }
+        Invoke-Python @("-m", "scripts.run_station_forever", "--root", $ProjectRoot, "--interval-seconds", "10")
     }
 }

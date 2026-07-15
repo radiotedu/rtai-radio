@@ -195,46 +195,47 @@ WEATHER_LONGITUDE=32.8541
 
 ## Public Dashboard And Website Sync
 
-The operator dashboard is local. The public website should use the `/ai` route and the public API only. The broadcast computer pushes sanitized snapshots outward to the website server; the website server does not call into the broadcast computer.
+The operator dashboard is local. The website server runs `backend.public_app`, which exposes only the bilingual listener pages and versioned public platform API. The broadcast supervisor pushes sanitized state outward; website failure never blocks playout.
 
 Broadcast computer example:
 
 ```env
-PUBLIC_SYNC_URL=https://radiotedu.com/api/public/snapshot
-PUBLIC_SYNC_TOKEN=change-this-shared-secret
-PUBLIC_STREAM_URL=https://radiotedu.com/live.mp3
+PUBLIC_SYNC_URL=https://api.radiotedu.com
 PUBLIC_SYNC_INTERVAL_SECONDS=10
+RADIOTEDU_AGENT_ID=school-radio-pc
+RADIOTEDU_AGENT_SCOPE=agent:playout
+RADIOTEDU_EN_SNAPSHOT_SECRET=<protected-secret-reference>
+RADIOTEDU_FR_SNAPSHOT_SECRET=<protected-secret-reference>
 ```
 
 Website server example:
 
 ```env
-PUBLIC_DASHBOARD_ENABLED=true
-PUBLIC_DASHBOARD_ROUTE=/ai
-PUBLIC_SYNC_TOKEN=change-this-shared-secret
-PUBLIC_STREAM_URL=https://radiotedu.com/live.mp3
 SNAPSHOT_TTL_SECONDS=30
-AUTONOMY_ENABLED=false
-PLAYBACK_BACKEND=simulate
+PUBLIC_COMPATIBILITY_ENABLED=false
+RADIOTEDU_AGENT_ID=school-radio-pc
+RADIOTEDU_AGENT_SCOPE=agent:playout
+RADIOTEDU_EN_SNAPSHOT_SECRET=<protected-secret-reference>
+RADIOTEDU_FR_SNAPSHOT_SECRET=<protected-secret-reference>
 ```
 
 Public endpoints:
 
 ```text
-POST /api/public/snapshot
-GET  /api/public/status
-POST /api/public/session/start
-POST /api/public/session/heartbeat
-POST /api/public/session/end
+POST /v1/radio/stations/{station_id}/snapshot
+POST /v1/radio/stations/{station_id}/plays
+PUT  /v1/radio/stations/{station_id}/covers/{cover_id}
+GET  /v1/radio/stations/{station_id}/status
+POST /v1/radio/stations/{station_id}/sessions/{start|heartbeat|end}
 ```
 
-Snapshot POSTs require `X-RadioTEDU-Sync-Token`. Public status intentionally excludes local file paths, logs, incidents, autonomous tasks, secrets, and operator controls. Listener counts and average session values are derived only from real browser session events on the website server; empty data is shown as `No data` or `0`, never invented.
+Writes require the `school-radio-pc` identity, `agent:playout` scope, per-station HMAC, nonce, timestamp, idempotency key, and correlation ID. Public state excludes paths, logs, incidents, autonomous tasks, secrets, and operator controls. Listener counts come only from station-scoped browser sessions with no IP or browser identity.
 
 The two Codex handoff prompts are stored in:
 
 ```text
-docs/BROADCAST_COMPUTER_CODEX_PROMPT.md
-docs/WEBSITE_SERVER_CODEX_PROMPT.md
+handoff/broadcast-server/prompt.md
+handoff/web-server/prompt.md
 ```
 
 ## Curated RSS News
@@ -274,40 +275,34 @@ PLAYBACK_BACKEND=mpv
 
 ## Liquidsoap And Icecast
 
-RadioTEDU can run the local admin dashboard as the control app while Liquidsoap streams the actual audio to Icecast at the `/ai` mount:
+RadioTEDU streams two isolated AAC-LC stations to one acknowledged shared Icecast host:
 
 ```env
 PLAYBACK_BACKEND=liquidsoap
 LIQUIDSOAP_ENABLED=true
-LIQUIDSOAP_QUEUE_PATH=data/liquidsoap/queue.m3u
-LIQUIDSOAP_SCRIPT_PATH=data/liquidsoap/radiotedu.liq
 LIQUIDSOAP_COMMAND=liquidsoap
-LIQUIDSOAP_HOST=127.0.0.1
-LIQUIDSOAP_PORT=8001
-LIQUIDSOAP_MOUNT=/ai
-LIQUIDSOAP_ICECAST_PASSWORD=hackme
-PUBLIC_STREAM_URL=http://127.0.0.1:8001/ai
+ICECAST_HOST=10.98.98.75
+ICECAST_PORT=11154
+ICECAST_USER=source
+ICECAST_ENCODER_PROFILE=aac_192
+ICECAST_PUBLIC=true
+RADIOTEDU_EN_SOURCE_CREDENTIALS=<protected-secret-reference>
+RADIOTEDU_FR_SOURCE_CREDENTIALS=<protected-secret-reference>
 ```
 
-Generate the Liquidsoap files from the API or from the admin dashboard `Air Output` panel:
+English uses `/en` and `https://stream.radiotedu.com/en`; French uses `/fr` and `https://stream.radiotedu.com/fr`. The source credential shared during development must be rotated before production and must never enter the repository or logs.
+
+Generate station-local Liquidsoap files from the station profiles:
 
 ```bash
 python - <<'PY'
-from backend.config import Settings
+from backend.stations.loader import load_station_profiles
 from backend.liquidsoap import render_liquidsoap_config
-print(render_liquidsoap_config(Settings.from_env()))
+print("Render each approved station profile on the target machine.")
 PY
 ```
 
-When `PLAYBACK_BACKEND=liquidsoap`, queued TTS announcements and real track paths are appended to the Liquidsoap playlist for the Liquidsoap process to stream. Install and run Icecast separately with a matching source password and port, then use `Start Icecast Air` from the admin dashboard. If Liquidsoap is not installed, the admin panel shows it as missing instead of pretending the stream is live.
-
-For `radiotedu.com/ai`, the broadcast computer should push public snapshots to the website server:
-
-```env
-PUBLIC_SYNC_URL=https://radiotedu.com/api/public/snapshot
-PUBLIC_SYNC_TOKEN=change-this-shared-secret
-PUBLIC_STREAM_URL=https://stream.radiotedu.com/ai
-```
+The installed Liquidsoap build must support FDK-AAC. Missing FDK-AAC is a hard preflight failure; do not fall back to MP3. The rendered encoder is `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)` with `public=true` and source username `source`.
 
 The website server renders those snapshots at `https://radiotedu.com/ai` without exposing the broadcast computer, local file paths, logs, or admin controls. `PUBLIC_STREAM_URL` should point to the public Icecast stream URL, which can use the Icecast `/ai` mount on a stream subdomain or port.
 

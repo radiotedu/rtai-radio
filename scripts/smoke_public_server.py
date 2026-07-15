@@ -2,130 +2,111 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import urllib.error
 import urllib.request
 import uuid
 
 
-def request_json(base_url: str, path: str, method: str = "GET", payload: dict | None = None, token: str | None = None) -> dict:
-    body = json.dumps(payload or {}).encode("utf-8") if payload is not None else None
-    headers = {"Content-Type": "application/json", "User-Agent": "RadioTEDU-Public-Smoke/1.0"}
-    if token:
-        headers["X-RadioTEDU-Sync-Token"] = token
+STATIONS = ("radiotedu-en", "radiotedu-fr")
+FORBIDDEN_PUBLIC_TERMS = (
+    "/api/air",
+    "/api/control",
+    "contact",
+    "message",
+    "purchase",
+    "wallet",
+    "reward",
+    "vote",
+    "social",
+    "playout",
+)
+
+
+def request_json(base_url: str, path: str, method: str = "GET", payload: dict | None = None) -> dict:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Accept": "application/json", "User-Agent": "RadioTEDU-Public-Smoke/2.0"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
     request = urllib.request.Request(base_url.rstrip("/") + path, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            data = response.read().decode("utf-8")
-            parsed = json.loads(data) if data else {}
-            return {"ok": True, "status": response.status, "json": parsed}
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return {"ok": response.status < 400, "status": response.status, "json": json.loads(response.read())}
     except urllib.error.HTTPError as exc:
-        text = exc.read().decode("utf-8", errors="replace")
-        return {"ok": False, "status": exc.code, "error": text[:300]}
-    except OSError as exc:
+        return {"ok": False, "status": exc.code, "error": exc.read(300).decode("utf-8", errors="replace")}
+    except (OSError, json.JSONDecodeError) as exc:
         return {"ok": False, "status": None, "error": str(exc)}
 
 
 def request_text(base_url: str, path: str) -> dict:
-    request = urllib.request.Request(base_url.rstrip("/") + path, headers={"User-Agent": "RadioTEDU-Public-Smoke/1.0"}, method="GET")
+    request = urllib.request.Request(
+        base_url.rstrip("/") + path,
+        headers={"User-Agent": "RadioTEDU-Public-Smoke/2.0"},
+        method="GET",
+    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            text = response.read(500).decode("utf-8", errors="replace")
-            return {"ok": response.status < 500, "status": response.status, "text": text}
+        with urllib.request.urlopen(request, timeout=8) as response:
+            text = response.read(2048).decode("utf-8", errors="replace")
+            return {"ok": response.status < 400, "status": response.status, "has_html": "<html" in text.lower()}
     except urllib.error.HTTPError as exc:
-        return {"ok": False, "status": exc.code, "error": exc.read().decode("utf-8", errors="replace")[:300]}
+        return {"ok": False, "status": exc.code, "error": str(exc)}
     except OSError as exc:
         return {"ok": False, "status": None, "error": str(exc)}
 
 
-def minimal_snapshot() -> dict:
-    return {
-        "schema_version": 1,
-        "generated_at": "2026-07-07T00:00:00+00:00",
-        "expires_at": "2026-07-07T00:00:30+00:00",
-        "channel": {"id": "radiotedu", "name": "RadioTEDU", "status": "idle"},
-        "now_playing": None,
-        "current_program": None,
-        "current_minutes_left": None,
-        "next_program": None,
-        "next_programs": [],
-        "programs": [],
-        "top_songs": [],
-        "top_genres": [],
-        "content_breakdown": [],
-        "activity": [],
-        "metrics": {},
-        "stream": {"url": "", "status": "unknown"},
+def run_smoke(base_url: str) -> dict:
+    results: dict[str, object] = {
+        "ai": request_text(base_url, "/ai"),
+        "ai_en": request_text(base_url, "/ai/en"),
+        "ai_fr": request_text(base_url, "/ai/fr"),
     }
+    openapi = request_json(base_url, "/openapi.json")
+    schema_paths = " ".join((openapi.get("json") or {}).get("paths", {})).lower()
+    forbidden_paths = [term for term in FORBIDDEN_PUBLIC_TERMS if term in schema_paths]
+    results["openapi"] = {"ok": bool(openapi.get("ok")) and not forbidden_paths, "forbidden_paths": forbidden_paths}
 
-
-def run_smoke(base_url: str, token: str | None) -> dict:
-    session_id = f"smoke-{uuid.uuid4()}"
-    results = {
-        "status": request_json(base_url, "/api/public/status"),
-        "ai_route": request_text(base_url, "/ai"),
-        "session_start": request_json(
-            base_url,
-            "/api/public/session/start",
-            method="POST",
-            payload={"session_id": session_id},
-        ),
-        "session_heartbeat": request_json(
-            base_url,
-            "/api/public/session/heartbeat",
-            method="POST",
-            payload={"session_id": session_id},
-        ),
-        "session_end": request_json(
-            base_url,
-            "/api/public/session/end",
-            method="POST",
-            payload={"session_id": session_id},
-        ),
-    }
-    if token:
-        results["snapshot"] = request_json(
-            base_url,
-            "/api/public/snapshot",
-            method="POST",
-            payload=minimal_snapshot(),
-            token=token,
-        )
-        results["wrong token"] = request_json(
-            base_url,
-            "/api/public/snapshot",
-            method="POST",
-            payload=minimal_snapshot(),
-            token="wrong-token",
-        )
-    status_json = results["status"].get("json") or {}
-    results["expired_or_offline"] = {
-        "ok": bool(status_json.get("online") is False or status_json.get("message")),
-        "status": results["status"].get("status"),
-        "online": status_json.get("online"),
-        "message": status_json.get("message"),
-    }
+    station_results: dict[str, object] = {}
+    for station_id in STATIONS:
+        root = f"/v1/radio/stations/{station_id}"
+        session_id = f"smoke_{uuid.uuid4()}"
+        session = {"session_id": session_id}
+        start = request_json(base_url, f"{root}/sessions/start", method="POST", payload=session)
+        status = request_json(base_url, f"{root}/status")
+        heartbeat = request_json(base_url, f"{root}/sessions/heartbeat", method="POST", payload=session)
+        end = request_json(base_url, f"{root}/sessions/end", method="POST", payload=session)
+        status_json = status.get("json") or {}
+        metrics = status_json.get("metrics") or {}
+        station_results[station_id] = {
+            "ok": all(item.get("ok") for item in (start, status, heartbeat, end))
+            and "active_website_listeners" in metrics,
+            "status": status.get("status"),
+            "online": status_json.get("online"),
+            "stale": status_json.get("stale"),
+            "active_website_listeners": metrics.get("active_website_listeners"),
+        }
+    results["stations"] = station_results
+    results["ok"] = all(results[key]["ok"] for key in ("ai", "ai_en", "ai_fr", "openapi")) and all(
+        station["ok"] for station in station_results.values()
+    )
     return results
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke-check the public RadioTEDU website server.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Public server base URL.")
-    parser.add_argument("--token", default="", help="Snapshot sync token for POST /api/public/snapshot.")
+    parser = argparse.ArgumentParser(description="Smoke-check the RadioTEDU public-only website service.")
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
-    parser.add_argument("--strict", action="store_true", help="Return non-zero for failed checks.")
+    parser.add_argument("--strict", action="store_true", help="Return non-zero when conformance checks fail.")
     args = parser.parse_args()
 
-    results = run_smoke(args.base_url, args.token or None)
-    failed = [name for name, result in results.items() if not result.get("ok")]
+    report = run_smoke(args.base_url)
     if args.json:
-        print(json.dumps({"base_url": args.base_url, "results": results, "failed": failed}, indent=2, ensure_ascii=True))
+        print(json.dumps(report, indent=2, ensure_ascii=True))
     else:
-        print(f"RadioTEDU public smoke: {args.base_url}")
-        for name, result in results.items():
-            state = "ok" if result.get("ok") else "fail"
-            print(f"- {name}: {state} ({result.get('status')})")
-    return 1 if args.strict and failed else 0
+        print(f"RadioTEDU public server: {'OK' if report['ok'] else 'FAILED'}")
+        for station_id, station in report["stations"].items():
+            print(f"- {station_id}: status={station['status']} online={station['online']} listeners={station['active_website_listeners']}")
+        if report["openapi"]["forbidden_paths"]:
+            print(f"- forbidden OpenAPI terms: {', '.join(report['openapi']['forbidden_paths'])}")
+    return 1 if args.strict and not report["ok"] else 0
 
 
 if __name__ == "__main__":

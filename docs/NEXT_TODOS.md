@@ -37,7 +37,7 @@ Acceptance:
 
 ## P0 - Wire Snapshot Pusher Into Runtime
 
-- [x] Start `PublicSnapshotPusher` automatically on backend startup when `PUBLIC_SYNC_URL` and `PUBLIC_SYNC_TOKEN` are configured.
+- [x] Replace per-app `PublicSnapshotPusher` ownership with one supervisor-level `PublicSyncService` using per-station HMAC authentication.
 - [x] Stop the pusher cleanly on backend shutdown.
 - [x] Keep `scripts/push_public_snapshot.py` as a manual/debug tool.
 - [x] Add exponential backoff for repeated website sync failures.
@@ -151,7 +151,7 @@ Acceptance:
 - [x] Add backwards-compatible handling for older broadcast clients.
 
 Acceptance:
-- `POST /api/public/snapshot` cannot store private/admin fields even if a bad client sends them.
+- Canonical versioned snapshot writes reject private/admin fields; the public-only app does not expose the legacy shared-token snapshot write.
 
 ## P1 - Website Server Runbook
 

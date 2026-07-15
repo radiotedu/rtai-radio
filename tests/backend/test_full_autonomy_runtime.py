@@ -163,6 +163,21 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
             specs[0].args[1:],
         )
         self.assertIn("npm.cmd", specs[2].args[0])
+        inherited = {
+            "PATH": "safe",
+            "RADIOTEDU_EN_SOURCE_CREDENTIALS": "en-secret",
+            "RADIOTEDU_FR_SOURCE_CREDENTIALS": "fr-secret",
+            "RADIOTEDU_EN_SNAPSHOT_SECRET": "en-hmac",
+            "RADIOTEDU_FR_SNAPSHOT_SECRET": "fr-hmac",
+        }
+        en_environment = module.process_environment(specs[0], inherited)
+        fr_environment = module.process_environment(specs[1], inherited)
+        self.assertEqual("en-secret", en_environment["RADIOTEDU_EN_SOURCE_CREDENTIALS"])
+        self.assertNotIn("RADIOTEDU_FR_SOURCE_CREDENTIALS", en_environment)
+        self.assertEqual("fr-secret", fr_environment["RADIOTEDU_FR_SOURCE_CREDENTIALS"])
+        self.assertNotIn("RADIOTEDU_EN_SOURCE_CREDENTIALS", fr_environment)
+        self.assertNotIn("RADIOTEDU_EN_SNAPSHOT_SECRET", en_environment)
+        self.assertNotIn("RADIOTEDU_FR_SNAPSHOT_SECRET", fr_environment)
         self.assertFalse(module.backend_health_due(started_at=100.0, now=110.0, grace_seconds=30))
         self.assertTrue(module.backend_health_due(started_at=100.0, now=131.0, grace_seconds=30))
 

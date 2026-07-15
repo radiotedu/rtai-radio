@@ -1,162 +1,70 @@
 # RadioTEDU Broadcast Computer Runbook
 
-This machine runs the actual local RadioTEDU broadcast. It owns the real music
-library, local AI, TTS, Liquidsoap/Icecast output, announcement prebuffer, and
-the sanitized snapshot push to the public website.
+This runbook applies only to the broadcasting computer. The builder machine does not install or run these services.
 
-It is not the public website server. It must never expose local paths, secrets,
-logs, incidents, or internal task details to `radiotedu.com/ai`.
+## Runtime shape
 
-## Hard Rules
+- `RadioTEDU.SharedAI`: loopback-only Ollama/Qwen TTS.
+- `RadioTEDU.BroadcastSupervisor`: independently supervises the `radiotedu-en` and `radiotedu-fr` station child processes and owns exactly one process-level `PublicSyncService`.
+- Every station child has its own orchestrator, database, music/announcement queues, fallback playlist, Liquidsoap process, cache, health, metadata, and logs.
+- Both mounts share Icecast at `10.98.98.75:11154`, an acknowledged host-level failure domain.
 
-- Exactly one channel: RadioTEDU.
-- Programs are schedule blocks inside RadioTEDU, not separate stations.
-- No demo mode, invented songs, invented artists, synthetic play history, synthetic listener counts, or synthetic stats.
-- No financial features.
-- Use real local music from `MUSIC_DIR=F:/Songs/Jazz` on this machine.
-- Keep `MIN_READY_ANNOUNCEMENTS=5` so the AI host works 4-5 songs ahead.
-- Run Air should not wait on the model during live playback.
+## Fixed audio contract
 
-## Setup
+| Station | Mount | Public player |
+| --- | --- | --- |
+| `radiotedu-en` | `/en` | `https://stream.radiotedu.com/en` |
+| `radiotedu-fr` | `/fr` | `https://stream.radiotedu.com/fr` |
 
-Clone or pull the repository:
+Both use source username `source`, profile `aac_192`, AAC-LC 192 kbps, and `public=true`. Liquidsoap must support FDK-AAC and render `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`. Missing FDK-AAC is a hard preflight failure.
 
-```powershell
-git clone https://github.com/akgularda/RadioTEDU.git F:\RTAI\RadioTEDU
-cd F:\RTAI\RadioTEDU
-```
+The source credential shared during development must be rotated before production. Store the rotated value and HMAC secrets only in the protected service environment. Never include them in the repository, prompt, command history, logs, or evidence.
 
-Create `.env` from `.env.example`, then set the broadcast values:
+## Protected configuration
+
+Start from `packaging/broadcast/service-env/RadioTEDU.BroadcastSupervisor.env.example`. Required non-secret settings include:
 
 ```env
 MUSIC_DIR=F:/Songs/Jazz
-OLLAMA_MODEL=qwen3.5:4b
-TTS_PROVIDER=qwen
-QWEN_TTS_COMMAND=python scripts/qwen_tts_command.py --text {text} --out {output_path} --voice {voice}
-PLAYBACK_BACKEND=liquidsoap
-LIQUIDSOAP_ENABLED=true
-LIQUIDSOAP_QUEUE_PATH=data/liquidsoap/queue.m3u
-LIQUIDSOAP_SCRIPT_PATH=data/liquidsoap/radiotedu.liq
-LIQUIDSOAP_COMMAND=liquidsoap
-ICECAST_HOST=127.0.0.1
-ICECAST_PORT=8001
-ICECAST_MOUNT=/ai
-PUBLIC_STREAM_URL=https://radiotedu.com/ai
-PUBLIC_SYNC_URL=https://radiotedu.com/api/public/snapshot
-PUBLIC_SYNC_TOKEN=replace-with-shared-secret
-AUTONOMY_ENABLED=true
 MIN_READY_ANNOUNCEMENTS=5
-MAX_READY_ANNOUNCEMENTS=8
-NEWS_ENABLED=true
+PUBLIC_SYNC_URL=https://api.radiotedu.com
+PUBLIC_SYNC_INTERVAL_SECONDS=10
+RADIOTEDU_AGENT_ID=school-radio-pc
+RADIOTEDU_AGENT_SCOPE=agent:playout
+PUBLIC_COMPATIBILITY_ENABLED=false
 ```
 
-Install and verify:
+Inject these through the target secret store without revealing values:
+
+- `RADIOTEDU_EN_SOURCE_CREDENTIALS`
+- `RADIOTEDU_FR_SOURCE_CREDENTIALS`
+- `RADIOTEDU_EN_SNAPSHOT_SECRET`
+- `RADIOTEDU_FR_SNAPSHOT_SECRET`
+
+The supervisor passes only the matching source credential to each station child and no HMAC secret. HMAC secrets stay with PublicSync.
+
+## Staging preflight
 
 ```powershell
-pip install -r requirements.txt
-npm install
-python scripts/check_ollama.py --install --start --pull
-python scripts/scan_music.py
-python scripts/run_broadcast_computer.py --check-only
-python scripts/smoke_broadcast.py --json
-```
-
-## Local Admin App
-
-Start the admin panel as the broadcast application:
-
-```powershell
-npm run desktop:dev
-```
-
-The Electron app starts the local FastAPI backend unless
-`RADIOTEDU_MANAGE_BACKEND=0` is set. Use the local dashboard for operator
-actions only.
-
-Expected operator checks before Run Air:
-
-- Music library has real indexed tracks from `F:/Songs/Jazz`.
-- Ollama reports the configured Qwen model ready.
-- Test TTS succeeds for each program voice.
-- Liquidsoap is installed or reachable by `LIQUIDSOAP_COMMAND`.
-- Icecast is reachable and the `/ai` mount can become active.
-- Public snapshot sync is configured.
-- Announcement prebuffer has at least 5 ready items.
-
-Use the dashboard's `Test TTS` button before real air. Use `Run Air` only after
-the readiness checklist is green enough for the intended output mode.
-
-## Liquidsoap And Icecast
-
-RadioTEDU renders a Liquidsoap config from environment values and writes a queue
-file at `LIQUIDSOAP_QUEUE_PATH`. The queue contains local audio paths for
-Liquidsoap only; those paths must never be sent to the public server.
-
-Icecast should expose the public stream mount:
-
-```text
-/ai
-```
-
-The public website should use `PUBLIC_STREAM_URL`, not a private LAN URL, when
-it renders the listener player.
-
-## Snapshot Push
-
-The broadcast backend starts a snapshot pusher automatically when
-`PUBLIC_SYNC_URL` and `PUBLIC_SYNC_TOKEN` are configured. It sends only
-sanitized public state:
-
-- RadioTEDU channel state.
-- Current program.
-- Now playing title, artist, and type.
-- Schedule and next program.
-- Top songs and genres derived from real play history.
-- Public stream URL/status.
-- Public cover URLs.
-- Timestamp.
-
-It must not send:
-
-- `F:/Songs/Jazz` or any other local path.
-- Secrets or `.env` values.
-- Logs, incidents, or autonomous task internals.
-- Generated private clip paths.
-
-If website sync fails, the broadcast continues and the failure is logged locally.
-
-## News Reading
-
-When `NEWS_ENABLED=true`, news must come only from configured RSS feeds. The
-agent can summarize retrieved source text and queue short announcements into
-the same prebuffer used for song, weather, and listener announcements.
-
-If RSS data is missing, stale, or unreachable, skip news. Do not invent news.
-
-## Verification
-
-Run before real air:
-
-```powershell
-python -m pytest tests/backend -q
+python -m pytest -q
 npm test
 npm run build
-python scripts/run_broadcast_computer.py --check-only
-python scripts/smoke_broadcast.py --json
+python scripts/check_ollama.py --install --start --pull
+python scripts/scan_music.py
+python scripts/smoke_broadcast.py --strict --json
+python scripts/check_icecast.py
 ```
 
-The target healthy state is:
+Before starting live air, confirm both station music libraries contain playable real files, each prebuffer has at least five ready announcements, and the two rendered configs have the exact mount/encoder/public settings. Run a target-machine TTS test without sending it to air.
 
-- `/api/status` shows Qwen ready.
-- Prebuffer has at least 5 ready announcements.
-- A real track from `F:/Songs/Jazz` can be queued.
-- Liquidsoap can feed Icecast `/ai`.
-- Snapshot push reaches `POST /api/public/snapshot`.
+Install the two services with `packaging/broadcast/install-services.ps1`. Omit `-Start` during staging. Do not create separate EN, FR, or PublicSync Windows services.
 
-## Troubleshooting
+## PublicSync behavior
 
-- If Qwen is missing, run `python scripts/check_ollama.py --install --start --pull`.
-- If no tracks are indexed, check `MUSIC_DIR=F:/Songs/Jazz` and run `python scripts/scan_music.py`.
-- If Run Air blocks, inspect the Air Readiness panel instead of forcing playback.
-- If Liquidsoap is missing, install it or switch temporarily to simulation for local tests.
-- If public sync fails, verify `PUBLIC_SYNC_URL`, `PUBLIC_SYNC_TOKEN`, and website reachability.
+PublicSync sends immediate snapshots on track/program/speech/stream changes and a 10-second heartbeat. Plays and covers use a durable outbox; unsent snapshots coalesce; retry uses full jitter from 1 to 60 seconds. Website failure never blocks playout.
+
+Writes use the versioned station endpoints on `https://api.radiotedu.com` with `school-radio-pc`, `agent:playout`, per-station HMAC, nonce, timestamp, idempotency key, and correlation ID. Never use the deprecated shared-token snapshot write.
+
+## Verification and rollback
+
+Verify one child restart leaves the other running, both mounts are independently healthy, payloads contain no private fields, outage recovery replays durable events, and no credential appears in output. Record the staged SHA and rollback SHA. Stop after staging unless production startup is explicitly authorized.
