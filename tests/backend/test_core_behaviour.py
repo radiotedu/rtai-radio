@@ -50,6 +50,8 @@ class RadioTEDUCoreTests(unittest.TestCase):
             music_dir=str(root / "music"),
             static_dir=str(root / "static"),
             rss_feeds_path=str(root / "rss_feeds.json"),
+            liquidsoap_queue_path=str(root / "liquidsoap" / "queue.m3u"),
+            liquidsoap_script_path=str(root / "liquidsoap" / "radiotedu.liq"),
             playback_backend="simulate",
         )
 
