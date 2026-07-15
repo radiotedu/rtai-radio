@@ -6,6 +6,8 @@ You are Codex on the RadioTEDU website/API server. This computer is not the buil
 
 Stage the public-only RadioTEDU platform and bilingual listener pages. Run `backend.public_app`, not the operator/broadcast `backend.app`. This server receives signed public state but has no music library, AI/TTS, Liquidsoap, source credential, autonomous playout orchestrator, or remote playout controls.
 
+This is a status-only service with no control surface. Accept and render only sanitized EN/FR public state; do not receive station rundown rows, local paths, editorial research notes, voice references, HMAC material in payloads, Icecast source credentials, logs, incidents, or operator tasks.
+
 Stop after staging and conformance verification. Do not switch production traffic, change public DNS, replace a running service, or issue production TLS certificates unless the operator explicitly authorizes it in this task.
 
 ## Fixed contract
@@ -24,6 +26,8 @@ Stop after staging and conformance verification. Do not switch production traffi
 
 The website server does not need and must never receive the Icecast source password.
 
+`RadioTEDU` is the display brand on this server. `Radio TED U` is a speech-only pronunciation instruction owned by the broadcasting computer; do not rewrite the visual brand into spaced words.
+
 ## Public product boundary
 
 Each EN/FR page contains only:
@@ -36,6 +40,8 @@ Each EN/FR page contains only:
 - curated editorial sound-character tags.
 
 No admin, contact, message, call, purchase, wallet, reward, voting, social posting, sharing, or playout-control capability may appear in the UI or public OpenAPI. Do not imitate Andon FM branding or layout; retain the original RadioTEDU design and only its clear information hierarchy.
+
+The public product may show sanitized coverage summaries supplied by the canonical snapshot, but it must not expose rundown item IDs, queue internals, failure traces, research provenance intended for operators, or any endpoint that can mutate playout.
 
 Listener counts come only from station-scoped session start/heartbeat/end records. Store no IP address, user agent, browser fingerprint, or browser identity.
 
@@ -91,6 +97,7 @@ Before accepting staging, also prove:
 - rolling cutoff, duration aggregation, rounding, empty history, and sound-tag fallbacks work;
 - valid/invalid HMAC, wrong identity/scope/station/path, stale time, replayed nonce, duplicate key, sequence rollback, oversized/private payload, redaction, and correlation tests pass;
 - OpenAPI and UI contain none of the forbidden engagement, commerce, social, admin, or playout-control capabilities;
+- the deployed application remains status-only with no control surface and accepts no private rundown internals or broadcast secrets;
 - no generated file contains the previously shared Icecast source credential.
 
 Report the staged revision, reverse-proxy/TLS assumptions, commands, pass/fail evidence, unresolved blockers, and exact actions still requiring production authorization. Do not perform the production cutover.

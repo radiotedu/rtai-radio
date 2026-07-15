@@ -1,6 +1,6 @@
 # RadioTEDU
 
-RadioTEDU is a local-first AI radio station that runs one channel only: `RadioTEDU`. Programs such as TEDU Dawn, Campus Flow, Jazz Lab, and Weekend Signal are scheduled blocks inside that channel.
+RadioTEDU is a local-first dual-station AI radio system. English (`radiotedu-en`) and French (`radiotedu-fr`) run as isolated station processes with fixed Icecast mounts `/en` and `/fr`; each owns its own autonomous orchestrator, database, rundown, queues, fallback playlist, Liquidsoap process, health, metadata, and logs. One top-level supervisor and one process-level `PublicSyncService` coordinate lifecycle and public status without controlling music selection.
 
 There is no demo mode and no invented listening data. Add your own local music before starting playback. If no playable music exists, the backend and dashboard still run, the station stays idle, and the dashboard asks you to add music and rescan.
 
@@ -27,6 +27,15 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Builder handoff
+
+This repository is prepared on a builder computer and then transferred through the verified `feature/dual-station-radiotedu` branch. The two—and only two—target-machine Codex instructions are:
+
+- `handoff/broadcast-server/prompt.md`
+- `handoff/web-server/prompt.md`
+
+Each target Codex performs its own discovery, protected configuration, installation, and staging checks. Both handoffs stop after staging and conformance verification unless production deployment is explicitly authorized.
+
 ## Current Music Library
 
 The portable default is:
@@ -35,13 +44,7 @@ The portable default is:
 MUSIC_DIR=data/music
 ```
 
-For this workstation you can point RadioTEDU at the Jazz library:
-
-```env
-MUSIC_DIR=F:/Songs/Jazz
-```
-
-The scanner walks the directory recursively, stores metadata in SQLite, deduplicates by file path, and keeps selection queries limited so large FLAC libraries stay manageable on an 8 GB CPU-only machine.
+On the broadcasting computer, configure each station profile to its operator-supplied, rights-cleared local media root. The library may include pop, jazz, classical, and other approved music; the runtime does not contact anyone, purchase music, or download replacements. The scanner walks each directory recursively, stores metadata in the station-local SQLite database, deduplicates by file path, and keeps selection queries limited so large libraries stay manageable on an 8 GB CPU-only machine.
 
 ## Local AI
 
@@ -98,7 +101,7 @@ AUTONOMY_TICK_SECONDS=30
 STRATEGY_INTERVAL_MINUTES=240
 ```
 
-The orchestrator is intentionally local and conservative. It keeps one RadioTEDU channel alive, refills the queue from real local tracks, records real play history, refreshes a long-horizon strategy note, edits the program schedule in SQLite, stores listener feedback as local memory, writes self-reviews, and drafts local segment notes. It also persists a structured strategy policy with goals, next actions, real library signals, and constraints so the dashboard can show what the agent is optimizing. It does not create extra channels, invent analytics, or operate external accounts.
+The orchestrator is intentionally local and conservative. English and French each run one station-local orchestrator with separate databases, rundowns, queues, fallback playlists, Liquidsoap state, health, metadata, and logs. Each tick maintains duration coverage, performs at most one optional speech render, and claims one ready rundown row only when playout is idle. Search, LLM, Qwen, FFmpeg, or website failure cannot block the next ready music track. A top-level supervisor recovers one station process without restarting the other, while one process-level `PublicSyncService` publishes status for both.
 
 Listener feedback submitted through the dashboard is sanitized for the non-financial station scope, stored as local autonomy memory, and answered with a queued local TTS reply. This works even before music is indexed; it does not invent listener counts or popularity.
 
@@ -116,20 +119,24 @@ On Windows, you can register that watchdog at login:
 powershell -ExecutionPolicy Bypass -File scripts/install_windows_task.ps1 -ProjectRoot F:\RTAI\RadioTEDU -WithFrontend
 ```
 
-### Announcement prebuffer
+### Durable rundown and announcement rendering
 
-For weaker machines, RadioTEDU can build a spoken-announcement buffer before it allows broadcast startup:
+Each station plans and renders ahead by actual audio duration:
 
 ```env
+RUNDOWN_PLANNED_SECONDS=14400
+RUNDOWN_RENDERED_SECONDS=3600
+RUNDOWN_REFILL_SECONDS=7200
+FALLBACK_COVERAGE_SECONDS=21600
 MIN_READY_ANNOUNCEMENTS=5
 MAX_READY_ANNOUNCEMENTS=8
 ```
 
-The agent fills `announcement_queue` with ready TTS clips, starts playback only when the ready count reaches the minimum, then consumes one prepared announcement before each real track. When playable tracks exist, each prepared announcement stores the planned real `track_id`, title, artist, genre, and decision reason in `metadata_json`, so the spoken intro and the song stay paired. If Ollama is unavailable, fallback intros still use real search/RSS snippets when supplied, then local metadata such as album, genre, mood, or duration; they do not invent song facts. Legacy generic agent prebuffer rows are retired as `stale` once real track-bound announcements can be prepared. This avoids generating every DJ line at the last second.
+The production readiness gate is at least four hours planned, 60 minutes rendered, and six hours of validated local fallback music. The planner refills strictly below two hours and keeps a one-track cushion when a duration lands exactly on a threshold. The announcement count remains a compatibility/diagnostic metric; it does not replace duration readiness.
 
-When sourced search/RSS context explicitly matches an upcoming real track, the prebuffer can queue a short `song_context` note with the source URL in metadata. If no matching sourced context exists, RadioTEDU skips that segment and uses only local track metadata.
+Prepared speech remains track-bound. Pop gets short unsourced radio fillers and greetings such as “have a good day”; do not research pop songs. Research is limited to jazz and classical, requires an exact local title-and-artist match plus HTTP(S) provenance, rejects lyrics/transcripts, and falls back to curated catalog metadata when no strict source matches.
 
-Autonomous ticks also maintain the prebuffer even when another item, such as a listener reply, is already queued. The tick response includes the current prebuffer snapshot so operators can see whether the station is ready to broadcast.
+Rundown playout prefers a prepared talk-over composite. Curated cues are strongest; estimated cues require confidence `0.65`. Music ducks by 10–12 dB while the mic is open. Unsafe cues, an immediate loud vocal, long speech, or an FFmpeg error fall back to sequential speech then track; any speech failure falls back to music-only.
 
 ## TTS
 
@@ -139,17 +146,9 @@ Qwen TTS is configured through a command template:
 QWEN_TTS_COMMAND=python scripts/qwen_tts_command.py --text {text} --out {output_path} --voice {voice}
 ```
 
-The wrapper uses `QWEN_TTS_HTTP_URL` when you have a Qwen TTS HTTP endpoint that returns WAV bytes. If no endpoint is configured, it exits quickly and the configured fallback provider handles the clip.
+The wrapper uses `QWEN_TTS_HTTP_URL` when the approved loopback Qwen TTS endpoint returns WAV bytes. If Qwen is unavailable, optional speech is skipped and music continuity is preserved; the broadcast runtime does not substitute another speech engine.
 
-The local admin app shows TTS runtime health and includes a `Test TTS` button. The test uses the current program host voice, such as `tr_female_cool` for Jazz Lab, and writes the generated WAV plus its `.txt` sidecar locally.
-
-On Windows, set the fallback to SAPI for real local speech when the Qwen command is empty:
-
-```env
-FALLBACK_TTS_PROVIDER=sapi
-```
-
-The dummy provider still exists as the final reliability fallback. It writes a short silent WAV and a `.txt` sidecar containing the narration text.
+The local admin app shows TTS runtime health and includes a `Test TTS` button. Target-machine qualification requires approved local male/female English and French reference clips. `RadioTEDU` is the display brand; spoken IDs say `Radio TED U`, with `TED` like “bed” and `U` like “you.” Authentic French speech remains disabled until its local references and Qwen health pass.
 
 ## Search
 
@@ -304,7 +303,7 @@ PY
 
 The installed Liquidsoap build must support FDK-AAC. Missing FDK-AAC is a hard preflight failure; do not fall back to MP3. The rendered encoder is `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)` with `public=true` and source username `source`.
 
-The website server renders those snapshots at `https://radiotedu.com/ai` without exposing the broadcast computer, local file paths, logs, or admin controls. `PUBLIC_STREAM_URL` should point to the public Icecast stream URL, which can use the Icecast `/ai` mount on a stream subdomain or port.
+The website server renders signed snapshots at `/ai`, `/ai/en`, and `/ai/fr` without exposing the broadcast computer, local file paths, logs, or admin controls. English and French players use the fixed public `/en` and `/fr` stream URLs above.
 
 The admin `Air Output` panel also has `Verify Icecast Air`, which renders the Liquidsoap config, confirms the queue file is readable, checks that the script references the queue, and probes the configured Icecast mount. It reports the real mount state; it does not claim the stream is live when Icecast/Liquidsoap are missing.
 
@@ -324,7 +323,7 @@ The prompts in `backend/art/prompts.py` can also be pasted into an external imag
 
 ## Programs
 
-Programs remain schedule blocks inside the one RadioTEDU channel. You can edit start time, end time, days, and vibe from the dashboard. The API is:
+Programs remain station-local schedule blocks. The default weekly flow includes bright/energetic pop-led morning and daytime blocks, warmer focused campus programming, curated jazz/classical night segments, broad weekend programming, and named weekday/weekend overnight blocks so every minute resolves to a program. Approved male and female host voices rotate across both languages. You can edit start time, end time, days, and vibe from the operator dashboard. The API is:
 
 ```http
 PATCH /api/programs/{program_id}

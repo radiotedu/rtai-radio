@@ -80,8 +80,12 @@ def test_two_machine_runbooks_and_smoke_scripts_exist() -> None:
     public_script = public_smoke.read_text(encoding="utf-8")
 
     for required in [
-        "MUSIC_DIR=F:/Songs/Jazz",
-        "MIN_READY_ANNOUNCEMENTS=5",
+        "RUNDOWN_PLANNED_SECONDS=14400",
+        "RUNDOWN_RENDERED_SECONDS=3600",
+        "RUNDOWN_REFILL_SECONDS=7200",
+        "FALLBACK_COVERAGE_SECONDS=21600",
+        "Do not research pop songs",
+        "Research is limited to jazz and classical",
         "https://api.radiotedu.com",
         "10.98.98.75:11154",
         "`/en`",
@@ -172,3 +176,37 @@ def test_exactly_two_target_machine_codex_prompts_are_packaged() -> None:
     ):
         assert required in combined
     assert not (ROOT / "packaging" / "streaming").exists()
+
+
+def test_broadcast_prompt_contains_time_coverage_editorial_and_talkover_contracts() -> None:
+    prompt = (ROOT / "handoff" / "broadcast-server" / "prompt.md").read_text(encoding="utf-8")
+    for required in (
+        "Radio TED U",
+        "four hours",
+        "60 minutes",
+        "below two hours",
+        "six hours",
+        "pop",
+        "jazz",
+        "classical",
+        "10–12 dB",
+        "0.65",
+    ):
+        assert required in prompt
+    lowered = prompt.casefold()
+    assert "do not research pop songs" in lowered
+    assert "research is limited to jazz and classical" in lowered
+    assert "stop before production" in lowered
+
+
+def test_web_prompt_remains_status_only_and_two_prompts_are_canonical() -> None:
+    prompts = sorted((ROOT / "handoff").glob("*/prompt.md"))
+    assert len(prompts) == 2
+    rendered = " ".join(path.read_text(encoding="utf-8") for path in prompts).casefold()
+    for forbidden in ("post /v1/radio/control", "buy now", "send message", "cast vote"):
+        assert forbidden not in rendered
+
+    web_prompt = (ROOT / "handoff" / "web-server" / "prompt.md").read_text(encoding="utf-8").casefold()
+    assert "status-only" in web_prompt
+    assert "no control surface" in web_prompt
+    assert "sanitized" in web_prompt

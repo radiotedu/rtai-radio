@@ -2,6 +2,8 @@
 
 This runbook applies only to the website/API server. It runs the public-only `backend.public_app`; it must not run the broadcast/operator `backend.app`.
 
+The website is status-only with no control surface. It accepts and renders sanitized station state, not broadcast rundown rows, local paths, research notes, voice references, logs, incidents, operator tasks, or source credentials.
+
 ## Public routes
 
 - `/ai` — English compatibility entry
@@ -11,6 +13,8 @@ This runbook applies only to the website/API server. It runs the public-only `ba
 - `https://api.radiotedu.com` — canonical platform API
 
 The stream proxy forwards `/en` and `/fr` to the corresponding private mounts at `10.98.98.75:11154`. It must not expose Icecast admin/source interfaces.
+
+Use `RadioTEDU` as the visual brand. `Radio TED U` is a speech-only instruction for the broadcasting computer and is not the website wordmark.
 
 ## Public-only API
 
@@ -30,6 +34,8 @@ New deployments set `PUBLIC_COMPATIBILITY_ENABLED=false`. If an approved compati
 
 Pages contain only player, now playing, current/next program, active website listeners, rolling 14-day music/talking percentages, and curated sound-character tags. No playout controls, admin, contact, messaging, calls, purchasing, wallet, rewards, voting, social posting, or sharing is allowed.
 
+Sanitized coverage may appear only as approved public snapshot fields. Never expose rundown IDs, queue state, retry traces, or a route that mutates station playout.
+
 Session storage is station-scoped and stores no IP, user agent, fingerprint, or browser identity. The airtime split excludes silence/unknown and shows unavailable when no classified duration exists. Sound labels use only the curated `warm`, `bright`, `calm`, `focused`, and `energetic` allowlist.
 
 ## Staging
@@ -44,4 +50,4 @@ python scripts/smoke_public_server.py --base-url http://127.0.0.1:<staging-port>
 
 Verify `/ai`, `/ai/en`, `/ai/fr`, localized labels, keyboard focus, responsive layout, fresh/stale/no-data behavior, last-valid-snapshot preservation, station session isolation, and HTTPS AAC browser playback. Inspect public OpenAPI for forbidden capabilities.
 
-Store HMAC verification secrets only in the website secret manager. This server must never receive the Icecast source password. Record the staged SHA, proxy/TLS config, rollback SHA, and redacted conformance results. Do not switch production traffic without explicit authorization.
+Store HMAC verification secrets only in the website secret manager. This server must never receive the Icecast source password. Record the staged SHA from the builder-published `feature/dual-station-radiotedu` revision, proxy/TLS config, rollback SHA, and redacted conformance results. Stop after staging; do not switch production traffic without explicit authorization.
