@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from backend.audio.segue_policy import (
+    CueSource,
     CueMetadata,
     Genre,
     MediaKind,
@@ -20,6 +21,8 @@ def music(
     intro_end_seconds: float | None = 5.0,
     intro_confidence: float | None = 0.95,
     overlap_validated: bool = True,
+    cue_source: CueSource | str = CueSource.CURATED,
+    immediate_loud_vocal: bool = False,
 ) -> SegueItem:
     return SegueItem(
         media_kind=MediaKind.MUSIC,
@@ -31,6 +34,8 @@ def music(
             intro_end_seconds=intro_end_seconds,
             intro_confidence=intro_confidence,
             overlap_validated=overlap_validated,
+            cue_source=CueSource(cue_source),
+            immediate_loud_vocal=immediate_loud_vocal,
         ),
     )
 
@@ -102,19 +107,58 @@ def test_talk_over_ends_half_a_second_before_a_verified_vocal_boundary() -> None
     assert 0.3 <= decision.speech_end_before_intro_seconds <= 0.7
     assert decision.time_stretch_ratio == 1.0
     assert decision.speaks_over_vocals is False
+    assert decision.cue_source is CueSource.CURATED
+    assert decision.duck_db == -11.0
+
+
+def test_estimated_cue_at_point_sixty_five_allows_talk_over() -> None:
+    incoming = music(
+        Genre.POP,
+        intro_end_seconds=4.0,
+        intro_confidence=0.65,
+        cue_source="estimated",
+    )
+
+    decision = SeguePolicy().choose(None, speech(4.5), incoming)
+
+    assert decision.kind is SegueKind.TALK_OVER
+    assert decision.cue_source is CueSource.ESTIMATED
+    assert decision.duck_db in {-10.0, -11.0, -12.0}
+    assert decision.speaks_over_vocals is True
+    assert 0.0 < decision.estimated_lyric_overlap_seconds <= 2.0
+
+
+def test_unknown_cue_uses_six_second_default_window() -> None:
+    incoming = music(
+        Genre.POP,
+        intro_end_seconds=None,
+        intro_confidence=None,
+        cue_source="none",
+    )
+
+    decision = SeguePolicy().choose(None, speech(5.0), incoming)
+
+    assert decision.kind is SegueKind.TALK_OVER
+    assert decision.cue_source is CueSource.DEFAULT
+    assert decision.speech_start_seconds == pytest.approx(0.25)
+    assert decision.speech_end_seconds <= 6.0
+    assert decision.duck_db == -11.0
 
 
 @pytest.mark.parametrize(
     "incoming",
     [
-        music(Genre.POP, intro_confidence=0.84),
-        music(Genre.POP, intro_end_seconds=2.9),
-        music(Genre.POP, intro_end_seconds=None),
+        music(Genre.POP, intro_confidence=0.64, cue_source="estimated"),
+        music(
+            Genre.POP,
+            intro_end_seconds=None,
+            intro_confidence=None,
+            cue_source="none",
+            immediate_loud_vocal=True,
+        ),
     ],
 )
-def test_speech_is_sequential_when_talk_over_cannot_be_proven_safe(
-    incoming: SegueItem,
-) -> None:
+def test_speech_is_sequential_when_minimum_evidence_rejects_talk_over(incoming: SegueItem) -> None:
     decision = SeguePolicy().choose(None, speech(1.0), incoming)
 
     assert decision.kind is SegueKind.SEQUENTIAL
@@ -124,7 +168,16 @@ def test_speech_is_sequential_when_talk_over_cannot_be_proven_safe(
 
 
 def test_speech_is_sequential_when_its_measured_duration_does_not_fit_the_intro() -> None:
-    decision = SeguePolicy().choose(None, speech(3.1), music(Genre.POP, intro_end_seconds=3.5))
+    decision = SeguePolicy().choose(
+        None,
+        speech(7.0),
+        music(
+            Genre.POP,
+            intro_end_seconds=3.5,
+            intro_confidence=0.8,
+            cue_source="estimated",
+        ),
+    )
 
     assert decision.kind is SegueKind.SEQUENTIAL
     assert decision.overlap_seconds == 0.0

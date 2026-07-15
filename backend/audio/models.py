@@ -46,8 +46,12 @@ class BroadcastAudioPolicy:
     silence_degraded_primary_seconds: float = 1.0
     silence_fallback_seconds: float = 1.5
     listener_visible_silence_limit_seconds: float = 2.0
-    talk_over_minimum_intro_confidence: float = 0.85
+    talk_over_minimum_intro_confidence: float = 0.65
     talk_over_minimum_instrumental_intro_seconds: float = 3.0
+    talk_over_duck_db: float = -11.0
+    talk_over_default_start_seconds: float = 0.25
+    talk_over_default_window_seconds: float = 6.0
+    talk_over_max_estimated_lyric_overlap_seconds: float = 2.0
     speech_target_before_intro_end_seconds: float = 0.5
     speech_target_before_intro_end_min_seconds: float = 0.3
     speech_target_before_intro_end_max_seconds: float = 0.7

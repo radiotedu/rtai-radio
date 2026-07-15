@@ -49,6 +49,40 @@ class PlaybackController:
     def add(self, item: QueueItem) -> None:
         self.queue.append(item)
 
+    def queue_talkover(
+        self,
+        speech: QueueItem,
+        track: QueueItem,
+        *,
+        output_path: str | Path,
+        decision,
+        renderer,
+    ) -> bool:
+        """Queue one composite, or preserve speech-then-track order on any render error."""
+
+        try:
+            rendered = renderer.render(
+                speech.file_path,
+                track.file_path,
+                output_path,
+                decision,
+            )
+        except Exception:
+            self.add(speech)
+            self.add(track)
+            return False
+        self.add(
+            QueueItem(
+                item_type="talkover_composite",
+                title=track.title,
+                file_path=str(rendered),
+                duration_seconds=track.duration_seconds,
+                artist=track.artist,
+                track_id=track.track_id,
+            )
+        )
+        return True
+
     def skip(self) -> None:
         self.now_playing = None
         self.now_started_at = None

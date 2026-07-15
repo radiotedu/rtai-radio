@@ -1,10 +1,4 @@
-"""Deterministic, analysis-gated decisions for station segues.
-
-This module selects an intent only.  Applying cue points, ducking, and gain
-curves belongs to the later playout integration work; keeping that boundary
-here makes every potentially overlapping transition auditable from measured
-metadata.
-"""
+"""Deterministic and auditable decisions for station segues."""
 
 from __future__ import annotations
 
@@ -44,15 +38,26 @@ class SegueKind(StrEnum):
     IMAGING_TRANSITION = "imaging_transition"
 
 
+class CueSource(StrEnum):
+    """Provenance for a talk-over opening decision."""
+
+    CURATED = "curated"
+    ESTIMATED = "estimated"
+    DEFAULT = "default"
+    NONE = "none"
+
+
 @dataclass(frozen=True, slots=True)
 class CueMetadata:
-    """Measured cue and vocal-boundary facts; absent facts never permit overlap."""
+    """Measured, curated, or explicitly absent cue and vocal-boundary facts."""
 
     cue_in_seconds: float | None = None
     cue_out_seconds: float | None = None
     intro_end_seconds: float | None = None
     intro_confidence: float | None = None
     overlap_validated: bool = False
+    cue_source: CueSource = CueSource.NONE
+    immediate_loud_vocal: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +73,7 @@ class SegueItem:
 
 @dataclass(frozen=True, slots=True)
 class SegueDecision:
-    """A playout-ready intent whose timing comes only from measured metadata."""
+    """A playout-ready intent with timing and cue provenance."""
 
     kind: SegueKind
     overlap_seconds: float = 0.0
@@ -80,6 +85,9 @@ class SegueDecision:
     speech_end_before_intro_seconds: float | None = None
     time_stretch_ratio: float = 1.0
     speaks_over_vocals: bool = False
+    cue_source: CueSource = CueSource.NONE
+    duck_db: float | None = None
+    estimated_lyric_overlap_seconds: float = 0.0
     reason: str = ""
 
 
@@ -158,33 +166,42 @@ class SeguePolicy:
         return self._sequential("no approved genre preset")
 
     def _speech_decision(self, speech: SegueItem, incoming: SegueItem) -> SegueDecision:
-        """Use a verified instrumental window, or keep all speech sequential."""
+        """Prefer cue metadata, then use a bounded default opening when appropriate."""
 
         cue = incoming.cue
+        if incoming.media_kind is not MediaKind.MUSIC or speech.duration_seconds <= 0.0:
+            return self._sequential("talk-over requires positive speech and incoming music")
+        if cue.immediate_loud_vocal:
+            return self._sequential("immediate loud vocal evidence requires sequential speech")
+
+        source = CueSource(cue.cue_source)
         cue_in = cue.cue_in_seconds
         intro_end = cue.intro_end_seconds
         confidence = cue.intro_confidence
         target_before_intro = self._speech_end_before_intro_seconds()
 
-        if (
-            incoming.media_kind is not MediaKind.MUSIC
-            or cue_in is None
-            or intro_end is None
-            or confidence is None
-            or speech.duration_seconds <= 0.0
+        if source in {CueSource.NONE, CueSource.DEFAULT}:
+            return self._default_opening_decision(speech)
+        if cue_in is None or intro_end is None:
+            return self._sequential("curated or estimated talk-over requires an intro boundary")
+        if source is CueSource.ESTIMATED and (
+            confidence is None
+            or confidence < BROADCAST_AUDIO_POLICY.talk_over_minimum_intro_confidence
         ):
-            return self._sequential("talk-over requires complete measured intro metadata")
+            return self._sequential("estimated intro confidence is below 0.65")
 
         instrumental_intro_seconds = intro_end - cue_in
+        if instrumental_intro_seconds < BROADCAST_AUDIO_POLICY.talk_over_minimum_instrumental_intro_seconds:
+            return self._sequential("instrumental opening is too short for talk-over")
+
         speech_end = intro_end - target_before_intro
         speech_start = speech_end - speech.duration_seconds
-        if (
-            confidence < BROADCAST_AUDIO_POLICY.talk_over_minimum_intro_confidence
-            or instrumental_intro_seconds
-            < BROADCAST_AUDIO_POLICY.talk_over_minimum_instrumental_intro_seconds
-            or speech_start < cue_in
-        ):
-            return self._sequential("speech does not fit a trustworthy instrumental intro")
+        if speech_start < cue_in:
+            speech_start = max(0.0, cue_in)
+            speech_end = speech_start + speech.duration_seconds
+        lyric_overlap = max(0.0, speech_end - intro_end)
+        if lyric_overlap > BROADCAST_AUDIO_POLICY.talk_over_max_estimated_lyric_overlap_seconds:
+            return self._sequential("speech would exceed the two-second lyric-overlap allowance")
 
         return SegueDecision(
             kind=SegueKind.TALK_OVER,
@@ -194,10 +211,38 @@ class SeguePolicy:
             uses_measured_cues=True,
             speech_start_seconds=speech_start,
             speech_end_seconds=speech_end,
-            speech_end_before_intro_seconds=target_before_intro,
+            speech_end_before_intro_seconds=intro_end - speech_end,
             time_stretch_ratio=1.0,
-            speaks_over_vocals=False,
-            reason="speech ends before the measured vocal boundary",
+            speaks_over_vocals=lyric_overlap > 0.0,
+            cue_source=source,
+            duck_db=BROADCAST_AUDIO_POLICY.talk_over_duck_db,
+            estimated_lyric_overlap_seconds=lyric_overlap,
+            reason=(
+                "speech ends before the curated vocal boundary"
+                if lyric_overlap == 0.0
+                else "best-effort cue permits bounded lyric overlap"
+            ),
+        )
+
+    @staticmethod
+    def _default_opening_decision(speech: SegueItem) -> SegueDecision:
+        start = BROADCAST_AUDIO_POLICY.talk_over_default_start_seconds
+        end = start + speech.duration_seconds
+        if end > BROADCAST_AUDIO_POLICY.talk_over_default_window_seconds:
+            return SeguePolicy._sequential("speech does not fit the six-second default opening")
+        return SegueDecision(
+            kind=SegueKind.TALK_OVER,
+            overlap_seconds=speech.duration_seconds,
+            outgoing_gain_curve="duck",
+            incoming_gain_curve="hold",
+            uses_measured_cues=False,
+            speech_start_seconds=start,
+            speech_end_seconds=end,
+            time_stretch_ratio=1.0,
+            speaks_over_vocals=True,
+            cue_source=CueSource.DEFAULT,
+            duck_db=BROADCAST_AUDIO_POLICY.talk_over_duck_db,
+            reason="best-effort six-second default opening without a cue",
         )
 
     @staticmethod
