@@ -6,7 +6,6 @@ from typing import Callable, Protocol
 from ..config import Settings, ensure_runtime_dirs
 from ..database import init_db
 from ..orchestrator import AutonomousOrchestrator
-from ..public_dashboard import PublicSnapshotPusher
 from ..radio_agent import RadioAgent
 from ..stations.context import (
     StationContext,
@@ -118,23 +117,9 @@ def create_station_runtime(
         agent = RadioAgent(station_context)
         orchestrator = AutonomousOrchestrator(station_context, agent)
     pusher = snapshot_pusher
-    if pusher is None:
-        pusher = (
-            snapshot_pusher_factory(station_context, agent)
-            if snapshot_pusher_factory is not None
-            else build_station_snapshot_pusher(station_context, agent)
-        )
+    if pusher is None and snapshot_pusher_factory is not None:
+        pusher = snapshot_pusher_factory(station_context, agent)
     return StationRuntime(station_context, agent, orchestrator, pusher)
-
-
-def build_station_snapshot_pusher(
-    context: StationContext,
-    agent: RadioAgent,
-) -> SnapshotPusher | None:
-    settings = context.settings
-    if not settings.public_sync_url or not settings.public_sync_token:
-        return None
-    return PublicSnapshotPusher(settings, agent)
 
 
 def _same_station_context(left: object, right: StationContext) -> bool:

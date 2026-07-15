@@ -21,6 +21,7 @@ from .models import ListenerFeedbackRequest, ProgramUpdateRequest, PublicSession
 from .music_library import scan_music
 from .ollama_setup import check_ollama_setup
 from .orchestrator import AutonomousOrchestrator
+from .platform_api import install_platform_routes
 from .public_dashboard import (
     PublicSnapshotPusher,
     public_session_end,
@@ -39,16 +40,6 @@ from .stations.loader import StationProfileError, load_station_profiles
 
 
 STARTED_AT = datetime.now(timezone.utc)
-
-
-def _build_public_snapshot_pusher(
-    context: StationContext,
-    agent: RadioAgent,
-) -> SnapshotPusher | None:
-    settings = context.settings
-    if not settings.public_sync_url or not settings.public_sync_token:
-        return None
-    return PublicSnapshotPusher(settings, agent)
 
 
 def create_app(
@@ -81,7 +72,6 @@ def create_app(
     runtime = create_station_runtime(
         runtime_source,
         snapshot_pusher=snapshot_pusher,
-        snapshot_pusher_factory=_build_public_snapshot_pusher,
     )
     context = runtime.context
     settings = context.settings
@@ -95,6 +85,7 @@ def create_app(
     app.state.agent = agent
     app.state.orchestrator = orchestrator
     app.state.public_snapshot_pusher = public_snapshot_pusher
+    install_platform_routes(app, settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[

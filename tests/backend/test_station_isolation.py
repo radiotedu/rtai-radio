@@ -334,42 +334,22 @@ def test_t00_importing_application_module_creates_no_runtime_artifacts(tmp_path:
     assert list(tmp_path.iterdir()) == []
 
 
-def test_t00_app_is_the_only_pusher_lifecycle_owner(tmp_path: Path, monkeypatch) -> None:
+def test_station_app_never_owns_process_level_public_sync_lifecycle(tmp_path: Path, monkeypatch) -> None:
     import backend.app as app_module
 
-    class RecordingPusher:
-        def __init__(self, settings, agent) -> None:
-            self.settings = settings
-            self.agent = agent
-            self.starts = 0
-            self.stops = 0
-
-        def start_background(self) -> dict:
-            self.starts += 1
-            return {"running": True}
-
-        def stop_background(self) -> dict:
-            self.stops += 1
-            return {"running": False}
-
-        def status(self) -> dict:
-            return {"running": self.starts > self.stops}
-
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(app_module, "PublicSnapshotPusher", RecordingPusher)
     context = contexts(tmp_path)["radiotedu-en"]
     context.settings.autonomy_enabled = False
-    context.settings.public_sync_url = "https://public.example.test/api/public/snapshot"
-    context.settings.public_sync_token = "test-token"
+    context.settings.public_sync_url = "https://api.radiotedu.com"
+    context.settings.platform_hmac_secret_en = "english-test-secret"
+    context.settings.platform_hmac_secret_fr = "french-test-secret"
 
     app = app_module.create_app(station_context=context)
-    pusher = app.state.public_snapshot_pusher
 
-    assert isinstance(pusher, RecordingPusher)
+    assert app.state.public_snapshot_pusher is None
     assert not hasattr(app.state.orchestrator, "public_pusher")
     with TestClient(app):
-        assert pusher.starts == 1
-    assert pusher.stops == 1
+        assert app.state.public_snapshot_pusher is None
 
 
 def test_create_app_accepts_exact_isolated_station_context(tmp_path: Path, monkeypatch) -> None:

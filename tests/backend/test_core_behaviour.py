@@ -184,17 +184,16 @@ class RadioTEDUCoreTests(unittest.TestCase):
             if response.status_code == 200:
                 self.assertIn("text/html", response.headers["content-type"])
 
-    def test_backend_starts_public_snapshot_pusher_when_configured(self) -> None:
+    def test_station_backend_never_owns_public_sync_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = self.make_settings(Path(tmp))
             settings.public_sync_url = "https://radiotedu.example/api/public/snapshot"
             settings.public_sync_token = "secret-token"
             app = create_app(settings)
 
-            self.assertIsNotNone(app.state.public_snapshot_pusher)
+            self.assertIsNone(app.state.public_snapshot_pusher)
             with TestClient(app):
-                self.assertTrue(app.state.public_snapshot_pusher.running)
-            self.assertFalse(app.state.public_snapshot_pusher.running)
+                self.assertIsNone(app.state.public_snapshot_pusher)
 
     def test_backend_does_not_start_public_snapshot_pusher_without_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

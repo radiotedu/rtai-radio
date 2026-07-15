@@ -795,6 +795,95 @@ create index if not exists idx_clock_positions_clock_ordinal
 """
 
 
+PUBLIC_PLATFORM_SCHEMA = """
+create table if not exists public_station_snapshots (
+    station_id text primary key,
+    sequence integer not null,
+    generated_at text not null,
+    expires_at text,
+    received_at text not null,
+    correlation_id text not null,
+    payload_json text not null
+);
+
+create table if not exists public_play_events (
+    station_id text not null,
+    event_id text not null,
+    occurred_at text not null,
+    classification text not null,
+    duration_ms integer not null,
+    payload_json text not null,
+    correlation_id text not null,
+    received_at text not null,
+    primary key(station_id, event_id)
+);
+
+create table if not exists public_cover_assets (
+    station_id text not null,
+    cover_id text not null,
+    content_type text not null,
+    body blob not null,
+    correlation_id text not null,
+    updated_at text not null,
+    primary key(station_id, cover_id)
+);
+
+create table if not exists public_agent_nonces (
+    agent_id text not null,
+    nonce text not null,
+    seen_at text not null,
+    primary key(agent_id, nonce)
+);
+
+create table if not exists public_idempotency_records (
+    agent_id text not null,
+    idempotency_key text not null,
+    method text not null,
+    path text not null,
+    body_hash text not null,
+    status_code integer not null,
+    response_json text not null,
+    created_at text not null,
+    primary key(agent_id, idempotency_key)
+);
+
+create table if not exists public_station_sessions (
+    station_id text not null,
+    session_id text not null,
+    started_at text not null,
+    last_seen_at text not null,
+    ended_at text,
+    primary key(station_id, session_id)
+);
+
+create index if not exists idx_public_play_events_airtime
+    on public_play_events(station_id, occurred_at, classification);
+create index if not exists idx_public_agent_nonces_seen
+    on public_agent_nonces(seen_at);
+create index if not exists idx_public_idempotency_created
+    on public_idempotency_records(created_at);
+create index if not exists idx_public_station_sessions_seen
+    on public_station_sessions(station_id, last_seen_at, ended_at);
+"""
+
+
+STATION_PUBLIC_EVENT_SCHEMA = """
+create table if not exists station_public_events (
+    id integer primary key autoincrement,
+    event_type text not null,
+    occurred_at text not null,
+    classification text not null,
+    duration_seconds real not null,
+    program_id text references programs(id),
+    title text,
+    metadata_json text not null default '{}'
+);
+
+create index if not exists idx_station_public_events_delivery
+    on station_public_events(id, event_type);
+"""
+
+
 DEFAULT_MIGRATIONS = (
     Migration(
         1,
@@ -825,5 +914,19 @@ DEFAULT_MIGRATIONS = (
         PROGRAM_CLOCK_SCHEMA,
         required_columns=_schema_column_requirements(PROGRAM_CLOCK_SCHEMA),
         schema_contract=_schema_contract(PROGRAM_CLOCK_SCHEMA),
+    ),
+    Migration(
+        5,
+        "create_public_platform_storage",
+        PUBLIC_PLATFORM_SCHEMA,
+        required_columns=_schema_column_requirements(PUBLIC_PLATFORM_SCHEMA),
+        schema_contract=_schema_contract(PUBLIC_PLATFORM_SCHEMA),
+    ),
+    Migration(
+        6,
+        "create_station_public_event_journal",
+        STATION_PUBLIC_EVENT_SCHEMA,
+        required_columns=_schema_column_requirements(STATION_PUBLIC_EVENT_SCHEMA),
+        schema_contract=_schema_contract(STATION_PUBLIC_EVENT_SCHEMA),
     ),
 )

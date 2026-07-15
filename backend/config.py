@@ -85,6 +85,13 @@ class Settings:
     public_sync_token: str = ""
     public_sync_interval_seconds: int = 10
     snapshot_ttl_seconds: int = 30
+    platform_agent_id: str = "school-radio-pc"
+    platform_agent_scope: str = "agent:playout"
+    platform_hmac_secret_en: str = ""
+    platform_hmac_secret_fr: str = ""
+    platform_snapshot_max_bytes: int = 262144
+    platform_timestamp_skew_seconds: int = 60
+    public_compatibility_enabled: bool = True
     admin_api_token: str = ""
     news_enabled: bool = False
     news_interval_minutes: int = 60
@@ -155,6 +162,13 @@ class Settings:
             "public_sync_token": "PUBLIC_SYNC_TOKEN",
             "public_sync_interval_seconds": "PUBLIC_SYNC_INTERVAL_SECONDS",
             "snapshot_ttl_seconds": "SNAPSHOT_TTL_SECONDS",
+            "platform_agent_id": "RADIOTEDU_AGENT_ID",
+            "platform_agent_scope": "RADIOTEDU_AGENT_SCOPE",
+            "platform_hmac_secret_en": "RADIOTEDU_EN_SNAPSHOT_SECRET",
+            "platform_hmac_secret_fr": "RADIOTEDU_FR_SNAPSHOT_SECRET",
+            "platform_snapshot_max_bytes": "RADIOTEDU_SNAPSHOT_MAX_BYTES",
+            "platform_timestamp_skew_seconds": "RADIOTEDU_TIMESTAMP_SKEW_SECONDS",
+            "public_compatibility_enabled": "PUBLIC_COMPATIBILITY_ENABLED",
             "admin_api_token": "ADMIN_API_TOKEN",
             "news_enabled": "NEWS_ENABLED",
             "news_interval_minutes": "NEWS_INTERVAL_MINUTES",

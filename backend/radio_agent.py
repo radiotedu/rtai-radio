@@ -212,7 +212,9 @@ class RadioAgent:
             if choice and choice.used_fallback:
                 log_event(conn, "warning", "LLM fallback used for track decision.", {"reason": choice.reason})
             conn.commit()
-        self.playback.play_next()
+        speech_item = self.playback.play_next()
+        if speech_item is not None:
+            self._record_public_airtime(speech_item, program["id"])
         track_item = self.playback.play_next()
         if track_item and track_item.track_id:
             self._record_play(track_item.track_id, program["id"], track_item.duration_seconds)
@@ -839,5 +841,32 @@ class RadioAgent:
             conn.execute(
                 "update tracks set last_played_at=?, play_count=play_count+1, updated_at=? where id=?",
                 (now_iso(), now_iso(), track_id),
+            )
+            conn.commit()
+
+    def _record_public_airtime(self, item: QueueItem, program_id: str | None) -> None:
+        if item.item_type in {"tts", "speech", "announcement", "live"}:
+            classification = "talking"
+        elif item.item_type in {"track", "music", "imaging_instrumental"}:
+            classification = "music"
+        elif item.item_type == "silence":
+            classification = "silence"
+        else:
+            classification = "unknown"
+        with connect(self._database_runtime) as conn:
+            conn.execute(
+                """
+                insert into station_public_events(
+                    event_type, occurred_at, classification, duration_seconds,
+                    program_id, title, metadata_json
+                ) values ('play.completed', ?, ?, ?, ?, ?, '{}')
+                """,
+                (
+                    now_iso(),
+                    classification,
+                    max(0.0, float(item.duration_seconds or 0.0)),
+                    program_id,
+                    item.title,
+                ),
             )
             conn.commit()

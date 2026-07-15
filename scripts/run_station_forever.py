@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -118,6 +119,46 @@ def backend_health_due(started_at: float, now: float, grace_seconds: int) -> boo
     return now - started_at >= grace_seconds
 
 
+def station_snapshot_provider(station_id: str, port: int) -> dict:
+    from backend.public_sync import snapshot_state_from_operator_status
+
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/status",
+        headers={"User-Agent": "RadioTEDU-PublicSync/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=1) as response:
+        status = json.loads(response.read().decode("utf-8"))
+    return snapshot_state_from_operator_status(station_id, status)
+
+
+def build_public_sync_service(root: Path, *, settings=None, transport=None):
+    """Create the one outbound sync owner shared by both station children."""
+
+    from backend.config import Settings
+    from backend.public_sync import PublicSyncService
+
+    root = root.resolve()
+    sync_settings = settings or Settings.from_env(root / ".env")
+    providers = {
+        station_id: (lambda station_id=station_id, port=port: station_snapshot_provider(station_id, port))
+        for station_id, port in STATION_PORTS.items()
+    }
+    options = {
+        "snapshot_providers": providers,
+        "station_databases": {
+            station_id: root / "data" / "stations" / station_id / "radio.db"
+            for station_id in STATION_PORTS
+        },
+    }
+    if transport is not None:
+        options["transport"] = transport
+    return PublicSyncService(
+        sync_settings,
+        root / "data" / "public-sync" / "public-sync.db",
+        **options,
+    )
+
+
 def _record_restart(state: ProcessState, now: float) -> None:
     while state.restart_times and now - state.restart_times[0] > RESTART_WINDOW_SECONDS:
         state.restart_times.popleft()
@@ -162,6 +203,8 @@ def supervise(root: Path, start_frontend: bool, health_url: str, interval_second
     del health_url, restart_delay_seconds  # Each station owns its health endpoint and policy.
     specs = build_process_specs(root, start_frontend=start_frontend)
     states = {spec.name: ProcessState() for spec in specs}
+    public_sync = build_public_sync_service(root)
+    public_sync.start_background()
     try:
         while True:
             now = time.time()
@@ -186,6 +229,7 @@ def supervise(root: Path, start_frontend: bool, health_url: str, interval_second
                     state.process = None
             time.sleep(interval_seconds)
     finally:
+        public_sync.stop_background()
         for state in states.values():
             _stop_process(state)
 
