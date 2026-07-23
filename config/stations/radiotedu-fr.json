@@ -6,7 +6,7 @@
   "locale": "fr-FR",
   "timezone": "Europe/Istanbul",
   "public": {
-    "route": "/ai/fr",
+    "route": "/ai",
     "compatibility_routes": [],
     "snapshot_endpoint": "/v1/radio/stations/radiotedu-fr/snapshot",
     "status_endpoint": "/v1/radio/stations/radiotedu-fr/status",

@@ -1,108 +1,168 @@
-# RadioTEDU Website Server — Codex Prompt
+# RadioTEDU website server — one-way Codex execution prompt
 
-You are Codex on the RadioTEDU website/API server. This computer is not the builder computer and it is not the broadcasting computer. The builder prepared and transferred an approved RadioTEDU revision; all server discovery, protected configuration, staging, and verification happen here.
+You are Codex running on the authorized RadioTEDU Windows/IIS website server. This is a one-way execution handoff: do not ask the builder computer questions and do not wait for a reply. Use safe local discovery and best judgment. Never print or copy secrets into chat, logs, source files, or reports. Complete every safe step you can, write the redacted deployment report described below, and leave production unchanged only when a required security or infrastructure dependency is genuinely unavailable.
 
-## Objective
+## Immutable baseline and one approved delta
 
-Stage the public-only RadioTEDU platform and its single bilingual listener page at `https://radiotedu.com/ai`. Run `backend.public_app`, not the operator/broadcast `backend.app`. This server receives signed public state but has no music library, AI/TTS, Liquidsoap, source credential, autonomous playout orchestrator, or remote playout controls.
+Clone the public repository and check out the exact release tag below. Do not deploy another branch, a moving default branch, or an unverified local copy.
 
-This is a status-only service with no control surface. Accept and render only sanitized EN/FR public state; do not receive station rundown rows, local paths, editorial research notes, voice references, HMAC material in payloads, Icecast source credentials, logs, incidents, or operator tasks.
+- Repository: `https://github.com/Radio-TEDU/radiotedu-ai.git`
+- Web release tag: `v1.0.4`
+- Release page: `https://github.com/Radio-TEDU/radiotedu-ai/releases/tag/v1.0.4`
 
-Stop after staging and conformance verification. Do not switch production traffic, change public DNS, replace a running service, or issue production TLS certificates unless the operator explicitly authorizes it in this task.
+The release contains the website source, supplied brand assets, six program covers, the website-only API, broadcast-connection contract, verification scripts and locked dependencies. It contains no music library, jingles, voice assets or credentials. Apply exactly one product delta after checkout: remove listener counting and listener-session tracking as specified below. Record that server-side patch in the deployment report. Make no other redesign.
 
-## Fixed contract
+## Outcome
 
-- API origin: `https://api.radiotedu.com`
-- Listener page: `https://radiotedu.com/ai`; this is the single listener page.
-- Language/station choice: one visible, keyboard-accessible in-page EN/FR station selector; do not create `/ai/en` or `/ai/fr`.
-- Station IDs: `radiotedu-en`, `radiotedu-fr`
-- Icecast-only origin: `https://stream.radiotedu.com`, with public audio mounts `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr`. It must not serve HTML, API, or application routes.
-- Private Icecast upstream: `10.98.98.75:11154`, mounts `/en` and `/fr`
-- Broadcast service identity: `school-radio-pc`
-- Allowed scope: `agent:playout`
-- Snapshot maximum: 256 KiB
-- Timestamp skew: 60 seconds
-- Snapshot freshness: `SNAPSHOT_TTL_SECONDS=30`
-- Public compatibility flag: `PUBLIC_COMPATIBILITY_ENABLED=false` for new deployments.
+Create and deploy the transferred RadioTEDU web package as the live public AI-radio experience at exactly:
 
-The website server does not need and must never receive the Icecast source password.
+- Listener page: `https://radiotedu.com/ai`
+- English audio, temporary mount: `https://stream.radiotedu.com/ai`
+- French audio, temporary mount: `https://stream.radiotedu.com/event`
+- Icecast-only audio origin: `https://stream.radiotedu.com`; it exposes the public audio mounts and never hosts the listener UI or metadata API.
+- Protocol-canonical station identities remain `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr` for signed-status compatibility only; the browser release remains pinned to `/ai` and `/event`.
 
-`RadioTEDU` is the display brand on this server. `Radio TED U` is a speech-only pronunciation instruction owned by the broadcasting computer; do not rewrite the visual brand into spaced words.
+The Icecast-only origin must not serve HTML, API, or application routes.
+- Canonical status/write API: `https://api.radiotedu.com/v1/radio/...`
 
-## Public product boundary
+There is a single listener page with an in-page EN/FR station selector. EN and FR are selected inside `/ai`. Do not create `/ai/en` or `/ai/fr`, and do not redirect to `/Radio`, `/radio`, `/rock`, or any other listener route. `https://radiotedu.com/ai` is the HTML listener page, while `https://stream.radiotedu.com/ai` is the temporary English Icecast audio mount; they are different hostnames and must never be conflated. `/event` on the stream hostname is the temporary French audio mount.
 
-The single `/ai` page contains only:
+The AI application is not expected to exist on this server yet. At handoff time, `https://radiotedu.com/ai` may still be a WordPress redirect to `/ai-music/`; that is the exact mapping this deployment replaces. Preserve all unrelated WordPress/IIS routes and content. Back up the current `/ai` redirect/article and relevant IIS configuration before changing only the exact `/ai` mapping. Do not alter the existing legacy `/radio` or `/rock` audio services.
 
-- stream player with browser-local play/pause;
-- now playing;
-- current and next program;
-- active website listeners;
-- rolling 14-day music/talking percentages;
-- curated editorial sound-character tags.
+## Product already built — do not redesign it
 
-No admin, contact, message, call, purchase, wallet, reward, voting, social posting, sharing, or playout-control capability may appear in the UI or public OpenAPI.
+Use the transferred source and assets exactly as the approved build. The visual direction is an original RadioTEDU editorial radio profile inspired by the broad information hierarchy of Andon FM, not a replica. It includes:
 
-Use an Andon FM-inspired dark, minimal, atmospheric information hierarchy: prominent central listening control, strong now-playing focus, restrained typography, generous spacing, and calm supporting information. Keep original RadioTEDU branding, copy, colors, and assets; do not copy Andon FM logos, text, illustrations, source assets, or distinctive branded artwork.
+- a prominent but viewport-balanced RadioTEDU AI editorial introduction; preserve the words `RadioTEDU AI`, but do not let the masthead consume the full first screen;
+- an above-the-fold live panel showing station language, current programme, now-playing title and artist, play/pause, codec/bitrate and live state without scrolling;
+- a restrained AI-capabilities strip;
+- an EN/FR station selector inside `/ai`;
+- a large station profile with current-program artwork, now playing, live player, RTAI state, current/next program, 14-day music/talking split, and bounded sound tags;
+- a `Recently played` list containing the latest 10 completed music plays with title, artist, programme, timestamp and cover when available;
+- `Top songs · last 14 days`, showing the five most-played songs and exact play counts;
+- `Top genres · last 14 days`, showing up to six genres ranked by classified music airtime percentage;
+- a complete six-program schedule with artwork based on the real Europe/Istanbul dayparts;
+- an explanation of the continuous AI-led broadcast model.
 
-The browser-local play/pause control starts or pauses only the visitor's audio element for the public stream URL. It never issues broadcast, playlist, or Liquidsoap commands, and it must not call any endpoint that changes station state.
+Required brand and program assets are built into `dist/frontend`:
 
-The public product may show sanitized coverage summaries supplied by the canonical snapshot, but it must not expose rundown item IDs, queue internals, failure traces, research provenance intended for operators, or any endpoint that can mutate playout.
+- `/brand/radiotedu-logo-white.png`
+- `/brand/rtai-logo.png`
+- `/programs/overnight_signal.png` — weekdays 00:00–05:59
+- `/programs/morning_signal.png` — weekdays 06:00–09:59
+- `/programs/campus_frequencies.png` — weekdays 10:00–17:59
+- `/programs/night_lab.png` — every day 18:00–23:59
+- `/programs/weekend_overnight.png` — weekends 00:00–07:59
+- `/programs/weekend_transmission.png` — weekends 08:00–17:59
 
-Listener counts come only from station-scoped session start/heartbeat/end records. Store no IP address, user agent, browser fingerprint, or browser identity.
+Keep the supplied RadioTEDU and RTAI marks exact. Do not substitute, redraw, distort, or AI-regenerate them. Do not copy Andon Labs logos, text, source assets, illustrations, or distinctive branded artwork.
 
-Music/talking uses actual completed classified airtime over the previous 14 days. Music tracks and instrumental imaging count as music; Qwen speech, live segments, and spoken imaging count as talking; silence and unknown are excluded. Compute music first and talking as `100 - music`. With no classified airtime, show unavailable rather than `0/0`.
+Use an Andon FM-inspired information hierarchy with original RadioTEDU branding. This is a status-only listener product with no control surface. No playout controls are permitted. The browser-local play/pause control affects only the visitor's audio element and never issues broadcast, playlist, or Liquidsoap commands.
 
-Sound tags come only from curated program `vibe` and track `mood` metadata through the bounded allowlist `warm`, `bright`, `calm`, `focused`, `energetic`. Do not run another AI or technical audio analysis.
+The listener page has no store, song buying, donations, requests, messages, phone calls, voting, social feed, sharing flow, or admin UI.
 
-## Repository and staging procedure
+The listener page must have no listener count. Remove the visible EN/FR listener metric, all browser session start/heartbeat/end requests, public listener-session endpoints, listener-session storage and `active_website_listeners` from the public response schema. Do not replace it with Icecast listeners, analytics, a hidden counter or a placeholder.
 
-1. Inspect the transferred repository and record `git rev-parse HEAD`, branch/tag, `git status --short`, and known-good rollback SHA. Do not deploy a mutable branch tip or discard server-owned data.
-2. Confirm the revision contains `backend/public_app.py`, `backend/platform_api.py`, `frontend/src/components/PublicDashboard.tsx`, and `scripts/smoke_public_server.py`.
-3. Create an isolated Python environment and install the approved locked dependencies. Run `npm ci` and build the Vite frontend into `dist/frontend`.
-4. Store the distinct EN and FR HMAC verification secrets in the server secret manager or ACL-protected environment. Never print, log, commit, or paste them into Codex. Do not configure a source password on this machine.
-5. Configure a durable database path and backup/restore procedure for snapshots, play events, covers, idempotency records, nonce replay records, listener sessions, and the last valid station snapshots.
-6. Start the staging service with `python -m backend.public_app` or the equivalent service-manager command. Bind it behind the staging reverse proxy; do not expose `backend.app`.
-7. Configure the main website reverse proxy so only `/ai`, `/assets`, and versioned API/session paths reach the public app as appropriate. Configure `api.radiotedu.com` for the canonical API. Reject oversized requests at the proxy before forwarding: 256 KiB for snapshots and play events, and 5 MiB for cover uploads; keep the application-level bounded streaming checks enabled as defense in depth.
-8. Configure the Icecast-only `stream.radiotedu.com` origin to terminate valid HTTPS and proxy only `/en` and `/fr` to the corresponding private Icecast mounts. It must not serve the listener UI, HTML, or API routes. Do not expose the Icecast admin interface or source port publicly.
+Now-playing and historical information are required and are not listener analytics. The browser must show the signed snapshot's current title and artist immediately when available. The website must store completed signed `play.completed` events and expose bounded station-scoped aggregates in the public status response:
 
-## Canonical API and security
+- `recent_plays`: latest 10 completed `music` events, newest first;
+- `top_songs_14d`: top five songs by completed play count, grouped by `track_id` when present and otherwise by normalized title plus artist;
+- `top_genres_14d`: up to six genres by music airtime percentage over the last 14 days;
+- `airtime`: existing music/talking split over the last 14 days.
 
-Expose:
+Extend the sanitized play-event schema with an optional bounded `genre` field for top-genre aggregation. Accept only a normalized public genre label of at most 64 characters; never infer a missing genre with an LLM. Exclude missing/unknown genre from the genre denominator and show an honest unavailable state when no classified genre data exists. All history queries must be station-scoped and bounded. Do not expose event IDs, local paths, queue state or internal track IDs to the browser.
 
-- `POST /v1/radio/stations/{station_id}/snapshot`
-- `POST /v1/radio/stations/{station_id}/plays`
-- `PUT /v1/radio/stations/{station_id}/covers/{cover_id}`
-- `GET /v1/radio/stations/{station_id}/status`
-- station-scoped session start, heartbeat, and end endpoints.
+## Architecture boundary
 
-Do not expose any control endpoint. Authenticate broadcast writes using `school-radio-pc`, `agent:playout`, and only the two configured station IDs. Require agent ID, timestamp, nonce, HMAC signature, idempotency key, and correlation ID. Bind the HMAC to method, versioned path, identity, station, replay/idempotency fields, and body hash.
+Run `backend.public_app`, never `backend.app`, on the website server. This machine is a public status/API/UI server only. It must not contain or run the music library, jingles, Qwen/TTS, Liquidsoap, the autonomous playout orchestrator, operator logs, Icecast source credentials, or any remote broadcast-control endpoint.
 
-Enforce constant-time verification, 60-second skew, nonce replay protection, monotonic station sequence, idempotent play storage, 256 KiB snapshot limit, private-field rejection, stable redacted errors, and returned `correlation_id`. Preserve the last valid snapshot and mark it stale when updates expire.
+Accepted public state is limited to the strict sanitized snapshot/play/cover protocol implemented in the transferred revision after applying the approved no-listener-count delta. Reject local paths, source credentials, private research/rundown internals, arbitrary tags, logs, incidents, tasks and extra fields.
 
-The deprecated English `/api/public/status` and session adapter may be enabled only for an explicitly approved compatibility window. It must read canonical storage and emit deprecation/sunset headers. The legacy shared-token snapshot write must remain absent.
+Fixed signed-status contract:
 
-## Required verification
+- station IDs: `radiotedu-en`, `radiotedu-fr`
+- display languages: `en`, `fr`
+- signed station stream identifiers remain `/en`, `/fr` with AAC-LC 192 kbps for compatibility with the broadcast status protocol already implemented in this release;
+- temporary browser audio mapping for this website release is English `/ai` and French `/event`, both currently MP3 192 kbps;
+- broadcast identity: `school-radio-pc`
+- allowed scope: `agent:playout`
+- timestamp skew: 60 seconds
+- snapshot freshness: `SNAPSHOT_TTL_SECONDS=30`
+- maximum snapshot/play request: 256 KiB
+- maximum cover upload: 5 MiB
+- new deployment compatibility flag: `PUBLIC_COMPATIBILITY_ENABLED=false`
 
-Run and retain redacted results for:
+The website server verifies distinct EN and FR HMAC secrets. Obtain them only from the server's approved secret manager or ACL-protected environment. Never request or store an Icecast source password here.
 
-```bash
+Before accepting operational status, expose the implemented mutual-authentication endpoint:
+
+- `POST /v1/radio/stations/{station_id}/handshake`
+- the broadcast computer initiates the outbound HTTPS request;
+- the server verifies the normal station-specific signed headers, fresh timestamp and one-time client nonce;
+- the server returns a fresh server nonce and station-secret HMAC proof;
+- the broadcast computer verifies that proof before considering the web server trusted;
+- every subsequent snapshot/play/cover request remains independently signed.
+
+This is not remote control and not an inbound connection to the broadcast computer. Matching station secrets require an approved out-of-band secret bootstrap. Never put them in this prompt, Git, deployment reports or browser code. If matching secrets are not yet present on both machines, report `awaiting_secret_provisioning`; do not claim a successful live handshake.
+
+## Execute
+
+1. Clone `https://github.com/Radio-TEDU/radiotedu-ai.git` into a new versioned server directory, fetch tags, check out detached tag `v1.0.4`, and record the resolved commit SHA. Verify every file listed in `MANIFEST.json` before continuing. Do not deploy the default branch or discard server-owned data.
+2. Back up the current IIS configuration and current `/ai` WordPress mapping/content in a recoverable, timestamped server-only location. Record exact rollback commands without exposing secrets.
+3. Confirm these required files exist: `backend/public_app.py`, `backend/platform_api.py`, `frontend/src/components/PublicDashboard.tsx`, `frontend/public/brand`, `frontend/public/programs`, `scripts/smoke_public_server.py`.
+4. Create an isolated Python environment, install `packaging/web/requirements-web.lock.txt`, run `npm ci`, and run `npm run build`. Confirm `dist/frontend/brand` and all six `dist/frontend/programs/*.png` files exist.
+5. Configure an ACL-protected durable database and backup/restore path for snapshots, play events, covers and HMAC replay/idempotency records. Do not create or retain listener-session storage.
+6. Configure distinct EN/FR HMAC verification secrets through protected environment/service configuration. Do not output their values.
+7. Install `python -m backend.public_app` as a durable least-privilege Windows service bound to loopback. Enable automatic restart and health logging with secret redaction. Do not install the operator app.
+8. Remove listener counting from the checked-out web release: delete the visible listener metric, browser session lifecycle calls, listener-session API routes/storage, related public schema fields and listener-count tests. Add negative tests proving that no listener count text, metric, session request or session endpoint remains.
+9. Implement the bounded public history aggregates described above from signed completed play events. Add the optional sanitized `genre` play-event field, database migration/indexes, recent/top-song/top-genre queries, public response types, EN/FR UI sections, empty states and tests. Do not fabricate seed data.
+9. Configure IIS/ARR so only these application paths reach the public app: `/ai`, `/assets/*`, `/brand/*`, `/programs/*`, `/v1/radio/*`, and `/openapi.json` if intentionally public. Ensure `/ai/en` and `/ai/fr` return 404. Preserve all unrelated WordPress routes.
+9. Configure `api.radiotedu.com` HTTPS binding/reverse proxy to the same public app's versioned API. If public DNS for this hostname is absent, configure IIS and certificate readiness but do not silently substitute another canonical origin; record the DNS dependency.
+10. Build only the signed status connection specified in `packaging/web/BROADCAST-CONNECTION.md`. Verify the implemented mutual handshake for both stations when matching secrets are already available: the broadcast computer initiates signed requests and verifies the server's signed nonce response. Then accept signed EN/FR status and play events at `https://api.radiotedu.com/v1/radio/...`. If matching secrets are not available on both machines, finish the safe website deployment, record `awaiting_secret_provisioning`, and provide an ACL-protected server-local secret provisioning checklist in the report. The website server never initiates a connection to the broadcast computer, connects to Icecast or sends playout commands.
+11. Do not create, modify, proxy, bind or administer `stream.radiotedu.com` on this website server. The website's browser audio element must map EN directly to `https://stream.radiotedu.com/ai` and FR directly to `https://stream.radiotedu.com/event`. These two release-pinned URLs override any older stream URL carried in a delayed signed status snapshot. Treat their availability as an external stream-service state, not as a website-server deployment responsibility.
+12. Run `packaging/web/verify-website-runtime.ps1` from the website server. Require healthy loopback `/ai` and EN/FR status endpoints, require both exact public stream URLs in the built browser bundle, and reject any private Icecast address or operator-control path in that bundle.
+13. Apply API proxy limits before forwarding: 256 KiB for snapshots and play events, 5 MiB for covers. Keep application-side bounded reads as defense in depth.
+14. Run the full verification gate below. If it passes, switch only the exact approved website/API/asset routes to the new service, verify from the public hostnames, and retain the rollback backup. If a required gate fails, roll back the changed route/binding and keep the verified staging service available only on loopback.
+
+## Verification gate
+
+Run and retain redacted results:
+
+```powershell
 python -m pytest -q
 npm test
 npm run build
 python scripts/smoke_public_server.py --base-url http://127.0.0.1:<staging-port> --strict --json
 ```
 
-Before accepting staging, also prove:
+Then verify from the public side:
 
-- `https://radiotedu.com/ai` renders the localized status-only single listener page with a keyboard-visible in-page EN/FR station selector, without `/ai/en` or `/ai/fr` listener routes;
-- the EN player uses `https://stream.radiotedu.com/en` and FR uses `https://stream.radiotedu.com/fr`;
-- browser playback works through the public TLS host in staging;
-- fresh, stale, and absent snapshots render honestly and the last valid snapshot survives polling failures;
-- listener sessions remain station-scoped and store no browser identity;
-- rolling cutoff, duration aggregation, rounding, empty history, and sound-tag fallbacks work;
-- valid/invalid HMAC, wrong identity/scope/station/path, stale time, replayed nonce, duplicate key, sequence rollback, oversized/private payload, redaction, and correlation tests pass;
-- OpenAPI and UI contain none of the forbidden engagement, commerce, social, admin, or playout-control capabilities;
-- the deployed application remains status-only with no control surface and accepts no private rundown internals or broadcast secrets;
-- no generated file contains the previously shared Icecast source credential.
+- `/ai` returns the built listener page; `/ai/en`, `/ai/fr`, `/Radio`, `/radio`, and `/rock` are not application routes;
+- the visible EN/FR buttons switch station data without changing `window.location.pathname` away from `/ai`;
+- EN audio source is exactly `https://stream.radiotedu.com/ai`, FR exactly `https://stream.radiotedu.com/event`, even when an older status snapshot contains `/en` or `/fr`;
+- `/brand/radiotedu-logo-white.png`, `/brand/rtai-logo.png`, and all six `/programs/*.png` assets return 200 with correct MIME types;
+- desktop and narrow-mobile layouts render without overflow, obscured controls or unreadable logo treatment;
+- the first viewport preserves the RadioTEDU AI masthead and shows the live player and now-playing identity without scrolling at 1440×900 and 390×844;
+- fresh, stale, absent and interrupted snapshot states are honest, and the last valid snapshot remains visible;
+- no listener count, listener-session request, listener-session endpoint, listener-session table or `active_website_listeners` field exists;
+- 14-day airtime aggregation, rounding, empty history and curated tag fallback are correct;
+- the signed snapshot's now-playing title and artist render without waiting for play-history aggregation;
+- recent plays are newest-first, station-isolated, music-only and limited to 10;
+- top songs use completed music plays from the last 14 days, group deterministically and show exact counts;
+- top genres use classified music airtime from the last 14 days, exclude missing genres, are station-isolated and have deterministic rounding;
+- stale or absent history shows an honest unavailable/empty state and never fabricated demo data;
+- HMAC identity/scope/station/path binding, stale timestamps, nonce replay, idempotency, sequence rollback, private/oversized payload rejection, stable redaction and correlation IDs pass;
+- EN and FR handshake requests reject wrong secrets/replayed nonces, and successful replies have fresh server nonces with independently recomputable station-specific server proofs;
+- public OpenAPI and rendered UI expose no commerce, engagement, operator or playout-control surface;
+- the built website points directly to `https://stream.radiotedu.com/ai` and `https://stream.radiotedu.com/event`; no IIS/ARR stream proxy or private Icecast address exists on this server;
+- no generated or transferred file contains an Icecast source credential.
 
-Report the staged revision, reverse-proxy/TLS assumptions, commands, pass/fail evidence, unresolved blockers, and exact actions still requiring production authorization. Do not perform the production cutover.
+## Required local report; no conversational handoff
+
+Write a redacted machine-readable result to:
+
+`C:\ProgramData\RadioTEDU\reports\web-deployment.json`
+
+Include: timestamp, hostname, deployed revision, backup/rollback location, build/test results, IIS bindings, loopback service status, public route status matrix, asset checks, API/DNS/TLS state, EN/FR handshake state (`verified` or `awaiting_secret_provisioning`), stream checks, production cutover result, unresolved dependencies and exact rollback commands. Never include secret values, tokens, credentials, private payloads, listener identifiers or local music paths.
+
+Do not wait for the builder computer and do not start a discussion. After writing the report, your final output must be one line only: `RADIO TEDU WEB COMPLETE — report: C:\ProgramData\RadioTEDU\reports\web-deployment.json` or `RADIO TEDU WEB SAFE STOP — report: C:\ProgramData\RadioTEDU\reports\web-deployment.json`.

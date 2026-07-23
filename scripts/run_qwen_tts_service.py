@@ -42,6 +42,8 @@ def main() -> None:
         model_id=model_id,
         voice_root=Path(os.environ["QWEN_VOICE_ROOT"]),
         warmup_request=warmup,
+        device=os.environ.get("QWEN_DEVICE"),
+        dtype=os.environ.get("QWEN_DTYPE"),
     )
     uvicorn.run(create_qwen_app(engine, model_id, actual), host=host, port=port, log_level="info")
 

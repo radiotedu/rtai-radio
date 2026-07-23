@@ -606,7 +606,7 @@ class RadioTEDUCoreTests(unittest.TestCase):
             self.assertIn('environment.get("ICECAST_PASSWORD")', script)
             self.assertIn("password=source_password", script)
             self.assertNotIn("secret", script)
-            self.assertIn('%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)', script)
+            self.assertIn('%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))', script)
             self.assertIn('user="source"', script)
             self.assertIn("public=true", script)
             self.assertNotIn("radiotedu.mp3", script)

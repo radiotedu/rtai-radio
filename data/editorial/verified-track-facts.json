@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "live_web_requests": false,
+    "fact_frequency": "occasional_only",
+    "identity_match": "exact_normalized_title_and_artist",
+    "fallback": "title_artist_only_or_generic_station_id"
+  },
+  "facts": [
+    {
+      "track_title": "Like A Prayer",
+      "track_artist": "Madonna",
+      "text_en": "Madonna's official site notes that Prince played uncredited guitar on this track.",
+      "text_fr": "Le site officiel de Madonna précise que Prince a joué de la guitare sur ce titre sans être crédité.",
+      "source_url": "https://www.madonna.com/blogs/news/like-a-prayer-the-silver-collection-vinyl",
+      "source_title": "Like A Prayer – The Silver Collection Vinyl",
+      "verified_at": "2026-07-23T07:35:00Z",
+      "evidence": "The official Madonna page names Like A Prayer and says Prince played guitar uncredited on Like A Prayer."
+    },
+    {
+      "track_title": "Heart of Glass",
+      "track_artist": "Blondie",
+      "text_en": "Blondie's official archive says an early demo was called The Disco Song before it became Heart of Glass.",
+      "text_fr": "Les archives officielles de Blondie indiquent qu'une première démo s'appelait The Disco Song avant de devenir Heart of Glass.",
+      "source_url": "https://archive.blondie.net/store_music.php",
+      "source_title": "Official Blondie Web Site: Music",
+      "verified_at": "2026-07-23T07:35:00Z",
+      "evidence": "The official Blondie archive identifies The Disco Song demo as later retitled Heart Of Glass."
+    },
+    {
+      "track_title": "Supermassive Black Hole",
+      "track_artist": "Muse",
+      "text_en": "Muse's official site says the song's video was directed by Floria Sigismondi.",
+      "text_fr": "Le site officiel de Muse indique que le clip du titre a été réalisé par Floria Sigismondi.",
+      "source_url": "https://www.muse.mu/news/supermassive-black-hole-video-227801",
+      "source_title": "Supermassive Black Hole Video",
+      "verified_at": "2026-07-23T07:35:00Z",
+      "evidence": "The official Muse page names Supermassive Black Hole and credits video director Floria Sigismondi."
+    }
+  ]
+}

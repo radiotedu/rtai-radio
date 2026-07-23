@@ -13,11 +13,8 @@ import {
 } from './api';
 
 function App() {
-  const publicRoute = /^\/ai(?:\/(en|fr))?\/?$/.exec(window.location.pathname);
-  if (publicRoute) {
-    const language: PublicLanguage = publicRoute[1] === 'fr' ? 'fr' : 'en';
-    const stationId: StationId = language === 'fr' ? 'radiotedu-fr' : 'radiotedu-en';
-    return <PublicApp language={language} stationId={stationId} />;
+  if (/^\/ai\/?$/.test(window.location.pathname)) {
+    return <PublicApp />;
   }
   return <OperatorApp />;
 }
@@ -72,7 +69,9 @@ function OperatorApp() {
   return <Dashboard status={status} onRefresh={() => void refresh()} />;
 }
 
-function PublicApp({ language, stationId }: { language: PublicLanguage; stationId: StationId }) {
+function PublicApp() {
+  const [language, setLanguage] = useState<PublicLanguage>('en');
+  const stationId: StationId = language === 'fr' ? 'radiotedu-fr' : 'radiotedu-en';
   const [status, setStatus] = useState<StationPublicStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +86,8 @@ function PublicApp({ language, stationId }: { language: PublicLanguage; stationI
   }
 
   useEffect(() => {
+    setStatus(null);
+    setError(null);
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => window.clearInterval(timer);
@@ -140,7 +141,14 @@ function PublicApp({ language, stationId }: { language: PublicLanguage; stationI
     );
   }
 
-  return <PublicDashboard status={status} language={language} connectionError={error} />;
+  return (
+    <PublicDashboard
+      status={status}
+      language={language}
+      connectionError={error}
+      onLanguageChange={setLanguage}
+    />
+  );
 }
 
 function createPublicSessionId(): string {

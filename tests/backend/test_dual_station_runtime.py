@@ -171,7 +171,7 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
         assert rendered["credentials_environment"] in script
         assert "environment.get(" in script
         assert "hackme" not in script
-        assert '%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)' in script
+        assert '%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))' in script
         assert 'user="source"' in script
         assert "public=true" in script
         assert "%mp3" not in script
@@ -188,22 +188,22 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
         assert rendered["fallback_air_ready"] is False
 
 
-def test_aac_192_preflight_rejects_liquidsoap_without_fdkaac() -> None:
+def test_aac_192_preflight_rejects_liquidsoap_without_ffmpeg() -> None:
     from backend.liquidsoap import liquidsoap_encoder_preflight
 
     missing = liquidsoap_encoder_preflight(
         Settings(liquidsoap_encoder_profile="aac_192"),
-        build_config="aacplus, ffmpeg, lame",
+        build_config="AAC: yes\nFDK-AAC: yes\nFFmpeg: no",
     )
     supported = liquidsoap_encoder_preflight(
         Settings(liquidsoap_encoder_profile="aac_192"),
-        build_config="fdkaac, ffmpeg, lame",
+        build_config="AAC: no\nFDK-AAC: no\nFFmpeg: yes",
     )
 
     assert missing == {
         "encoder_profile": "aac_192",
         "encoder_supported": False,
-        "reason": "fdkaac_unavailable",
+        "reason": "ffmpeg_unavailable",
     }
     assert supported == {
         "encoder_profile": "aac_192",

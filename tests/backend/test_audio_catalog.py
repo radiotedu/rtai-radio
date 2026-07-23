@@ -246,6 +246,24 @@ def test_scan_music_persists_validated_station_catalogs_without_cross_station_le
     ]
 
 
+def test_scan_music_preserves_operator_rock_folder_classification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    music_root = tmp_path / "media" / "stations" / "radiotedu-en" / "music"
+    rock_song = music_root / "rock" / "Artist - Song.wav"
+    rock_song.parent.mkdir(parents=True)
+    _write_wave(rock_song)
+    context = _station_context("radiotedu-en", tmp_path / "radiotedu-en", music_root)
+
+    scan_music(context)
+    scan_music(context)
+
+    with connect(context) as conn:
+        row = conn.execute("select genre from tracks where file_path=?", (str(rock_song.resolve()),)).fetchone()
+    assert row["genre"] == "rock"
+
+
 def test_station_separation_rejects_local_title_artist_album_and_track_cooldowns() -> None:
     now = datetime(2026, 7, 11, 12, tzinfo=timezone.utc)
     policy = SeparationPolicy(

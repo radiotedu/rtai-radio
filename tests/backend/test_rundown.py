@@ -66,6 +66,9 @@ def test_settings_load_exact_coverage_environment_names(tmp_path: Path):
                 "RUNDOWN_RENDERED_SECONDS=3601",
                 "RUNDOWN_REFILL_SECONDS=7201",
                 "FALLBACK_COVERAGE_SECONDS=21601",
+                "JINGLE_ENABLED=true",
+                "JINGLE_INTERVAL_TRACKS=4",
+                "IMAGING_RELEASE_ROOT=staged-imaging",
             )
         ),
         encoding="utf-8",
@@ -77,6 +80,9 @@ def test_settings_load_exact_coverage_environment_names(tmp_path: Path):
     assert settings.rundown_rendered_seconds == 3_601
     assert settings.rundown_refill_seconds == 7_201
     assert settings.fallback_coverage_seconds == 21_601
+    assert settings.jingle_enabled is True
+    assert settings.jingle_interval_tracks == 4
+    assert settings.imaging_release_root == "staged-imaging"
 
 
 def test_planner_builds_four_hours_and_refills_below_two(tmp_path: Path):

@@ -122,6 +122,14 @@ class PublicSession(StrictModel):
     session_id: str = Field(min_length=16, max_length=128)
 
 
+class HandshakeRequest(StrictModel):
+    protocol: Literal["radiotedu-platform/v1"]
+    schema_version: Literal[1]
+    station_id: Literal["radiotedu-en", "radiotedu-fr"]
+    agent_id: Literal["school-radio-pc"]
+    client_nonce: str = Field(min_length=16, max_length=128)
+
+
 def _secret_for_station(settings: Settings, station_id: str) -> str:
     if station_id == "radiotedu-en":
         return settings.platform_hmac_secret_en
@@ -198,6 +206,33 @@ def sign_platform_headers(
         "Idempotency-Key": idempotency_key,
         "X-Correlation-ID": correlation_id,
     }
+
+
+def handshake_response_signature(
+    settings: Settings,
+    *,
+    station_id: str,
+    agent_id: str,
+    client_nonce: str,
+    server_nonce: str,
+    server_timestamp: str,
+    correlation_id: str,
+) -> str:
+    """Return the proof used by the broadcast computer to authenticate the website."""
+
+    fields = (
+        PROTOCOL,
+        "handshake-response",
+        station_id,
+        agent_id,
+        client_nonce,
+        server_nonce,
+        server_timestamp,
+        correlation_id,
+    )
+    canonical = "\n".join(fields).encode("utf-8")
+    secret = _secret_for_station(settings, station_id)
+    return "sha256=" + hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
 
 
 def _correlation_id(request: Request) -> str:
@@ -456,6 +491,58 @@ async def _read_limited_body(request: Request, max_bytes: int) -> bytes | None:
 
 def install_platform_routes(app: FastAPI, settings: Settings) -> None:
     init_db(settings)
+
+    @app.post("/v1/radio/stations/{station_id}/handshake")
+    async def handshake(station_id: str, request: Request):
+        correlation_id = _correlation_id(request)
+        body = await _read_limited_body(request, 16 * 1024)
+        if body is None:
+            return _error(413, "payload_too_large", "handshake exceeds the allowed size", correlation_id)
+        auth, auth_error = _authenticate(settings, request, station_id, body)
+        if auth_error is not None:
+            return auth_error
+        assert auth is not None
+        try:
+            envelope = HandshakeRequest.model_validate_json(body)
+        except ValidationError:
+            return _error(422, "invalid_payload", "handshake payload is invalid", correlation_id)
+        if (
+            envelope.station_id != station_id
+            or envelope.agent_id != auth["agent_id"]
+            or envelope.client_nonce != auth["nonce"]
+            or not _SAFE_ID.fullmatch(envelope.client_nonce)
+        ):
+            return _error(422, "invalid_payload", "handshake identity is invalid", correlation_id)
+        with connect(settings) as conn:
+            conn.execute("begin immediate")
+            if not _register_nonce(conn, auth):
+                conn.rollback()
+                return _error(409, "replayed_nonce", "request nonce has already been used", correlation_id)
+            conn.commit()
+        server_nonce = uuid.uuid4().hex
+        server_timestamp = str(int(time.time()))
+        proof = handshake_response_signature(
+            settings,
+            station_id=station_id,
+            agent_id=auth["agent_id"],
+            client_nonce=auth["nonce"],
+            server_nonce=server_nonce,
+            server_timestamp=server_timestamp,
+            correlation_id=correlation_id,
+        )
+        return {
+            "protocol": PROTOCOL,
+            "schema_version": 1,
+            "authenticated": True,
+            "station_id": station_id,
+            "agent_id": auth["agent_id"],
+            "client_nonce": auth["nonce"],
+            "server_nonce": server_nonce,
+            "server_timestamp": server_timestamp,
+            "expires_in_seconds": int(settings.platform_timestamp_skew_seconds),
+            "correlation_id": correlation_id,
+            "server_signature": proof,
+        }
 
     @app.post("/v1/radio/stations/{station_id}/snapshot", status_code=201)
     async def store_snapshot(station_id: str, request: Request):

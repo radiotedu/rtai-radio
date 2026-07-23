@@ -41,6 +41,12 @@ def create_public_app(
     assets = frontend_dist / "assets"
     if assets.exists():
         app.mount("/assets", StaticFiles(directory=str(assets)), name="frontend_assets")
+    brand_assets = frontend_dist / "brand"
+    if brand_assets.exists():
+        app.mount("/brand", StaticFiles(directory=str(brand_assets)), name="frontend_brand_assets")
+    program_assets = frontend_dist / "programs"
+    if program_assets.exists():
+        app.mount("/programs", StaticFiles(directory=str(program_assets)), name="frontend_program_assets")
 
     @app.middleware("http")
     async def public_security_headers(request, call_next):
@@ -62,8 +68,6 @@ def create_public_app(
         return FileResponse(str(index_path), media_type="text/html")
 
     app.add_api_route("/ai", listener_page, methods=["GET"], include_in_schema=False)
-    app.add_api_route("/ai/en", listener_page, methods=["GET"], include_in_schema=False)
-    app.add_api_route("/ai/fr", listener_page, methods=["GET"], include_in_schema=False)
 
     if settings.public_compatibility_enabled:
         compatibility_headers = {

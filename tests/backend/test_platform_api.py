@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request as StarletteRequest
 
 from backend.config import Settings
-from backend.platform_api import install_platform_routes, sign_platform_headers
+from backend.platform_api import (
+    handshake_response_signature,
+    install_platform_routes,
+    sign_platform_headers,
+)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -152,6 +156,58 @@ def test_valid_hmac_snapshot_is_stored_and_returned_by_station_status(tmp_path: 
     assert status.status_code == 200
     assert status.json()["snapshot"]["now_playing"]["title"] == "Blue Campus"
     assert status.json()["snapshot"]["stream"]["url"] == "https://stream.radiotedu.com/en"
+
+
+def test_mutual_handshake_authenticates_broadcast_agent_and_website(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    client = _client(settings)
+    station_id = "radiotedu-en"
+    path = f"/v1/radio/stations/{station_id}/handshake"
+    client_nonce = uuid.uuid4().hex
+    payload = {
+        "protocol": "radiotedu-platform/v1",
+        "schema_version": 1,
+        "station_id": station_id,
+        "agent_id": "school-radio-pc",
+        "client_nonce": client_nonce,
+    }
+
+    response = _signed_post(
+        client,
+        settings,
+        path,
+        payload,
+        nonce=client_nonce,
+        idempotency_key=f"handshake-{uuid.uuid4().hex}",
+    )
+    result = response.json()
+    expected_proof = handshake_response_signature(
+        settings,
+        station_id=station_id,
+        agent_id=result["agent_id"],
+        client_nonce=result["client_nonce"],
+        server_nonce=result["server_nonce"],
+        server_timestamp=result["server_timestamp"],
+        correlation_id=result["correlation_id"],
+    )
+
+    assert response.status_code == 200
+    assert result["authenticated"] is True
+    assert result["station_id"] == station_id
+    assert result["client_nonce"] == client_nonce
+    assert result["expires_in_seconds"] == 60
+    assert result["server_signature"] == expected_proof
+
+    replay = _signed_post(
+        client,
+        settings,
+        path,
+        payload,
+        nonce=client_nonce,
+        idempotency_key=f"handshake-{uuid.uuid4().hex}",
+    )
+    assert replay.status_code == 409
+    assert replay.json()["error"]["code"] == "replayed_nonce"
 
 
 def test_hmac_binds_agent_station_path_replay_fields_and_body(tmp_path: Path) -> None:
@@ -302,6 +358,7 @@ def test_public_openapi_has_status_only_and_no_remote_playout_or_engagement_capa
     rendered = " ".join(sorted(paths)).lower()
 
     assert "/v1/radio/stations/{station_id}/snapshot" in paths
+    assert "/v1/radio/stations/{station_id}/handshake" in paths
     assert "/v1/radio/stations/{station_id}/plays" in paths
     assert "/v1/radio/stations/{station_id}/covers/{cover_id}" in paths
     assert "/v1/radio/stations/{station_id}/status" in paths

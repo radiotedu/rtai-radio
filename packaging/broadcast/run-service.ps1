@@ -36,6 +36,11 @@ function Invoke-Python([string[]]$Arguments) {
     exit $LASTEXITCODE
 }
 
+function Test-ProtectedValue([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    return $Value -notmatch '(?i)^<.*>$|replace-with|placeholder|changeme|example'
+}
+
 $envFile = Join-Path $ConfigRoot "$ServiceName.env"
 Import-RadioTEDUEnvironment $envFile
 Set-Location -LiteralPath $ProjectRoot
@@ -45,6 +50,27 @@ switch ($ServiceName) {
     "RadioTEDU.SharedAI" {
         if ($env:QWEN_TTS_HOST -notin @("127.0.0.1", "localhost", "::1")) {
             throw "SharedAI Qwen must bind to loopback"
+        }
+        foreach ($requiredFile in @($env:QWEN_MODEL_CHECKSUM_FILE, $env:QWEN_WARMUP_REQUEST_JSON)) {
+            if (-not (Test-ProtectedValue $requiredFile) -or -not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+                throw "SharedAI requires its protected model and warmup files"
+            }
+        }
+        if (-not (Test-ProtectedValue $env:QWEN_VOICE_ROOT) -or -not (Test-Path -LiteralPath $env:QWEN_VOICE_ROOT -PathType Container)) {
+            throw "SharedAI requires its protected voice root"
+        }
+        $warmup = Get-Content -LiteralPath $env:QWEN_WARMUP_REQUEST_JSON -Raw | ConvertFrom-Json
+        if (
+            -not (Test-ProtectedValue ([string]$warmup.voice.voice_pack)) -or
+            ([string]$warmup.voice.voice_pack) -match '(?i)technical|not-approved|qualification'
+        ) {
+            throw "SharedAI warmup must use an approved production voice pack"
+        }
+        foreach ($relativeAsset in @($warmup.voice.reference_audio_path, $warmup.voice.clone_prompt_path)) {
+            $asset = Join-Path $env:QWEN_VOICE_ROOT ([string]$relativeAsset)
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+                throw "SharedAI approved warmup voice assets are incomplete"
+            }
         }
         $ollama = $null
         if ($env:OLLAMA_COMMAND) {
@@ -59,11 +85,36 @@ switch ($ServiceName) {
     "RadioTEDU.BroadcastSupervisor" {
         if ($env:RADIOTEDU_AGENT_ID -ne "school-radio-pc") { throw "Broadcast supervisor has an invalid agent identity" }
         if ($env:RADIOTEDU_AGENT_SCOPE -ne "agent:playout") { throw "Broadcast supervisor has an invalid agent scope" }
-        if (-not $env:RADIOTEDU_EN_SOURCE_CREDENTIALS -or -not $env:RADIOTEDU_FR_SOURCE_CREDENTIALS) {
+        if (
+            -not (Test-ProtectedValue $env:RADIOTEDU_EN_SOURCE_CREDENTIALS) -or
+            -not (Test-ProtectedValue $env:RADIOTEDU_FR_SOURCE_CREDENTIALS)
+        ) {
             throw "Broadcast supervisor requires protected source credentials for both mounts"
         }
-        if (-not $env:RADIOTEDU_EN_SNAPSHOT_SECRET -or -not $env:RADIOTEDU_FR_SNAPSHOT_SECRET) {
+        if (
+            -not (Test-ProtectedValue $env:RADIOTEDU_EN_SNAPSHOT_SECRET) -or
+            -not (Test-ProtectedValue $env:RADIOTEDU_FR_SNAPSHOT_SECRET)
+        ) {
             throw "Broadcast supervisor requires per-station HMAC secrets"
+        }
+        try {
+            $qwenHealth = Invoke-RestMethod -Uri "http://127.0.0.1:8090/health" -TimeoutSec 5
+        } catch {
+            throw "Broadcast supervisor requires the warmed loopback Qwen service"
+        }
+        if ($qwenHealth.status -ne "ready" -or -not $qwenHealth.warmed) {
+            throw "Broadcast supervisor requires the warmed loopback Qwen service"
+        }
+        if (-not (Test-ProtectedValue $env:LIQUIDSOAP_COMMAND)) {
+            throw "Broadcast supervisor requires a protected Liquidsoap command"
+        }
+        $liquidsoap = Get-Command $env:LIQUIDSOAP_COMMAND -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $liquidsoap) {
+            throw "Broadcast supervisor cannot find its Liquidsoap command"
+        }
+        $buildConfig = & $liquidsoap.Source --build-config 2>&1
+        if ($LASTEXITCODE -ne 0 -or -not ($buildConfig | Select-String -Pattern 'FFmpeg\s*:\s*yes')) {
+            throw "Broadcast supervisor requires service-visible FFmpeg encoding"
         }
         Invoke-Python @("-m", "scripts.run_station_forever", "--root", $ProjectRoot, "--interval-seconds", "10")
     }

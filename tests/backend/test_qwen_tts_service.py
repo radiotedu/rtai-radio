@@ -2,10 +2,11 @@ import hashlib
 import io
 import wave
 
+import numpy as np
 from fastapi.testclient import TestClient
 
 from backend.tts.contracts import SynthesisRequest, VoiceSelection
-from backend.tts.qwen_service import create_qwen_app
+from backend.tts.qwen_service import QwenModelEngine, create_qwen_app
 
 
 def wav_bytes() -> bytes:
@@ -101,3 +102,44 @@ def test_app_refuses_non_loopback_bind_configuration() -> None:
             assert "loopback" in str(exc)
         else:
             raise AssertionError(f"accepted non-loopback host {invalid}")
+
+
+def test_model_engine_adapts_station_language_and_qwen_tuple(tmp_path) -> None:
+    (tmp_path / "maya.pt").write_bytes(b"prompt")
+    (tmp_path / "maya.wav").write_bytes(wav_bytes())
+
+    class FakeQwenModel:
+        def __init__(self) -> None:
+            self.arguments = None
+
+        def generate_voice_clone(
+            self,
+            text,
+            language,
+            ref_audio=None,
+            ref_text=None,
+            instruct=None,
+            clone_prompt_path=None,
+        ):
+            self.arguments = {
+                "text": text,
+                "language": language,
+                "ref_audio": ref_audio,
+                "ref_text": ref_text,
+                "instruct": instruct,
+                "clone_prompt_path": clone_prompt_path,
+            }
+            return [np.zeros(2400, dtype=np.float32)], 24000
+
+    engine = QwenModelEngine.__new__(QwenModelEngine)
+    engine._voice_root = tmp_path.resolve(strict=True)
+    engine._model = FakeQwenModel()
+
+    payload, sample_rate = engine.synthesize(request())
+
+    assert engine._model.arguments["language"] == "English"
+    assert payload.startswith(b"RIFF") and payload[8:12] == b"WAVE"
+    assert sample_rate == 24000
+    with wave.open(io.BytesIO(payload), "rb") as output:
+        assert output.getnchannels() == 1
+        assert output.getnframes() == 2400

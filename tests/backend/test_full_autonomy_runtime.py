@@ -1073,9 +1073,10 @@ class FullAutonomyRuntimeTests(unittest.TestCase):
                 result["playout"],
             )
             script = Path(result["script_path"]).read_text(encoding="utf-8")
-            self.assertIn("assume_autocue=true", script)
-            self.assertIn("conservative=true", script)
+            self.assertNotIn("assume_autocue=true", script)
+            self.assertNotIn("conservative=true", script)
             self.assertIn("blank.detect(", script)
+            self.assertIn("radio.on_blank(", script)
             self.assertIn("max_blank=1.0", script)
             self.assertIn("blank.skip(", script)
             self.assertIn("max_blank=1.5", script)

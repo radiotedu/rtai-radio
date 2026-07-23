@@ -697,7 +697,7 @@ const stationPublicStatus: StationPublicStatusResponse = {
     current_program: { id: 'jazz-lab', name: 'Jazz Lab', vibe: 'Warm focus', sound_tags: ['warm', 'focused'] },
     next_program: { id: 'tedu-dawn', name: 'TEDU Dawn', vibe: 'Bright start', sound_tags: ['bright'] },
     stream: {
-      url: 'https://stream.radiotedu.com/en',
+      url: 'https://stream.radiotedu.com/ai',
       mount: '/en',
       status: 'live',
       codec: 'AAC-LC',
@@ -716,19 +716,30 @@ describe('PublicDashboard', () => {
   it('renders only the essential English listener information', () => {
     render(<PublicDashboard status={stationPublicStatus} language="en" />);
 
-    expect(screen.getByRole('heading', { name: 'RadioTEDU English' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'RadioTEDU AI' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Blue Room' })).toHaveLength(2);
+    expect(screen.getByRole('img', { name: 'RadioTEDU' })).toHaveAttribute(
+      'src',
+      '/brand/radiotedu-logo-white.png',
+    );
+    expect(screen.getByRole('img', { name: 'RTAI' })).toBeInTheDocument();
     expect(screen.getByLabelText('RadioTEDU English live stream')).toHaveAttribute(
       'src',
-      'https://stream.radiotedu.com/en',
+      'https://stream.radiotedu.com/ai',
     );
+    expect(screen.getByLabelText('RadioTEDU English listener')).toContainElement(
+      screen.getByLabelText('RadioTEDU English live stream'),
+    );
+    expect(screen.getByLabelText('RadioTEDU English listener')).toHaveTextContent('Current listeners');
     expect(screen.getAllByText('Blue Room').length).toBeGreaterThan(0);
-    expect(screen.getByText('Jazz Lab')).toBeInTheDocument();
-    expect(screen.getByText('TEDU Dawn')).toBeInTheDocument();
+    expect(screen.getAllByText('Jazz Lab').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('TEDU Dawn').length).toBeGreaterThan(0);
     expect(screen.getByText('17')).toBeInTheDocument();
     expect(screen.getByText('84%')).toBeInTheDocument();
     expect(screen.getByText('16%')).toBeInTheDocument();
     expect(screen.getByText('Warm')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Français' })).toHaveAttribute('href', '/ai/fr');
+    expect(screen.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'FR' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByText(/contact|message|purchase|wallet|reward|vote|social|playout|control|copy|share/i)).toBeNull();
   });
 
@@ -739,22 +750,22 @@ describe('PublicDashboard', () => {
       snapshot: {
         ...stationPublicStatus.snapshot!,
         station: { id: 'radiotedu-fr', language: 'fr', display_name: 'RadioTEDU Français' },
-        stream: { ...stationPublicStatus.snapshot!.stream, url: 'https://stream.radiotedu.com/fr', mount: '/fr' },
+        stream: { ...stationPublicStatus.snapshot!.stream, url: 'https://stream.radiotedu.com/event', mount: '/fr' },
       },
     };
 
     render(<PublicDashboard status={frenchStatus} language="fr" />);
 
-    expect(screen.getByRole('heading', { name: 'RadioTEDU Français' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Blue Room' })).toHaveLength(2);
     expect(screen.getByLabelText('Flux en direct de RadioTEDU Français')).toHaveAttribute(
       'src',
-      'https://stream.radiotedu.com/fr',
+      'https://stream.radiotedu.com/event',
     );
-    expect(screen.getByText('Émission actuelle')).toBeInTheDocument();
+    expect(screen.getAllByText('Émission actuelle').length).toBeGreaterThan(0);
     expect(screen.getByText('Musique')).toBeInTheDocument();
     expect(screen.getByText('Parlé')).toBeInTheDocument();
     expect(screen.getByText('Chaleureux')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'English' })).toHaveAttribute('href', '/ai/en');
+    expect(screen.getByRole('button', { name: 'FR' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows unavailable instead of a zero split when classified airtime is empty', () => {

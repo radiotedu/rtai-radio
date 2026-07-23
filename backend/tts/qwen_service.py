@@ -25,15 +25,42 @@ class QwenEngine(Protocol):
 class QwenModelEngine:
     """One loaded Qwen model, shared by all local service requests."""
 
-    def __init__(self, model_id: str, voice_root: Path, warmup_request: SynthesisRequest) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        voice_root: Path,
+        warmup_request: SynthesisRequest,
+        *,
+        device: str | None = None,
+        dtype: str | None = None,
+    ) -> None:
         try:
             from qwen_tts import Qwen3TTSModel
         except ImportError as exc:  # pragma: no cover - requires broadcast hardware extras
             raise RuntimeError("Qwen TTS runtime dependencies are not installed") from exc
 
+        load_options: dict[str, Any] = {}
+        if device:
+            if device != "cpu" and not device.startswith("cuda"):
+                raise ValueError("Qwen device must be cpu or a cuda device")
+            load_options["device_map"] = device
+        if dtype:
+            try:
+                import torch
+            except ImportError as exc:  # pragma: no cover - qwen-tts requires torch
+                raise RuntimeError("PyTorch is required to select a Qwen dtype") from exc
+            dtypes = {
+                "float16": torch.float16,
+                "float32": torch.float32,
+                "bfloat16": torch.bfloat16,
+            }
+            if dtype not in dtypes:
+                raise ValueError("Qwen dtype must be float16, float32, or bfloat16")
+            load_options["dtype"] = dtypes[dtype]
+
         self._voice_root = voice_root.resolve(strict=True)
         self._warmup_request = warmup_request
-        self._model = Qwen3TTSModel.from_pretrained(model_id)
+        self._model = Qwen3TTSModel.from_pretrained(model_id, **load_options)
 
     def _approved_voice_file(self, relative_path: str) -> Path:
         candidate = (self._voice_root / relative_path).resolve(strict=True)
@@ -52,9 +79,10 @@ class QwenModelEngine:
         reference_audio = self._approved_voice_file(request.voice.reference_audio_path)
         method = self._model.generate_voice_clone
         parameters = inspect.signature(method).parameters
+        qwen_language = {"en": "English", "fr": "French"}[request.language]
         arguments: dict[str, Any] = {
             "text": request.normalized_text,
-            "language": request.language,
+            "language": qwen_language,
         }
         # Qwen releases have used different names for these optional inputs.  Pass
         # each only when its installed runtime supports it, while never accepting
@@ -67,8 +95,16 @@ class QwenModelEngine:
             "clone_prompt_path": str(clone_prompt),
         }
         arguments.update({name: value for name, value in optional_arguments.items() if name in parameters})
-        waveform = method(**arguments)
-        if isinstance(waveform, tuple):
+        generated = method(**arguments)
+        sample_rate = int(getattr(self._model, "sample_rate", 24000))
+        if isinstance(generated, tuple):
+            waveform, returned_sample_rate = generated
+            sample_rate = int(returned_sample_rate)
+        else:
+            waveform = generated
+        if isinstance(waveform, (list, tuple)):
+            if len(waveform) != 1:
+                raise RuntimeError(f"Qwen returned {len(waveform)} waveforms for one request")
             waveform = waveform[0]
 
         try:
@@ -77,7 +113,6 @@ class QwenModelEngine:
             raise RuntimeError("soundfile is required by the Qwen TTS runtime") from exc
 
         target = io.BytesIO()
-        sample_rate = int(getattr(self._model, "sample_rate", 24000))
         soundfile.write(target, waveform, sample_rate, format="WAV", subtype="PCM_16")
         return target.getvalue(), sample_rate
 

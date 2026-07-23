@@ -71,6 +71,9 @@ class Settings:
     rundown_rendered_seconds: int = 3_600
     rundown_refill_seconds: int = 7_200
     fallback_coverage_seconds: int = 21_600
+    jingle_enabled: bool = False
+    jingle_interval_tracks: int = 3
+    imaging_release_root: str = "."
     liquidsoap_enabled: bool = False
     liquidsoap_queue_path: str = "data/liquidsoap/queue.m3u"
     liquidsoap_script_path: str = "data/liquidsoap/radiotedu.liq"
@@ -117,6 +120,8 @@ class Settings:
             raise ValueError("rendered rundown coverage cannot exceed planned coverage")
         if self.rundown_refill_seconds > self.rundown_planned_seconds:
             raise ValueError("rundown refill threshold cannot exceed planned coverage")
+        if self.jingle_interval_tracks <= 0:
+            raise ValueError("jingle_interval_tracks must be positive")
 
     @classmethod
     def from_env(cls, env_path: str | Path = ".env") -> "Settings":
@@ -163,6 +168,9 @@ class Settings:
             "rundown_rendered_seconds": "RUNDOWN_RENDERED_SECONDS",
             "rundown_refill_seconds": "RUNDOWN_REFILL_SECONDS",
             "fallback_coverage_seconds": "FALLBACK_COVERAGE_SECONDS",
+            "jingle_enabled": "JINGLE_ENABLED",
+            "jingle_interval_tracks": "JINGLE_INTERVAL_TRACKS",
+            "imaging_release_root": "IMAGING_RELEASE_ROOT",
             "liquidsoap_enabled": "LIQUIDSOAP_ENABLED",
             "liquidsoap_queue_path": "LIQUIDSOAP_QUEUE_PATH",
             "liquidsoap_script_path": "LIQUIDSOAP_SCRIPT_PATH",

@@ -123,8 +123,6 @@ def create_app(
         return build_status(settings, agent, orchestrator, public_snapshot_pusher)
 
     @app.get("/ai")
-    @app.get("/ai/en")
-    @app.get("/ai/fr")
     def public_ai_page():
         index_path = frontend_dist / "index.html"
         if not index_path.exists():

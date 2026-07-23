@@ -18,6 +18,7 @@ from .stations.context import StationContext
 
 
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg"}
+NON_MUSIC_FILENAME_MARKERS = ("vlog review",)
 
 
 @dataclass
@@ -53,6 +54,8 @@ def iter_audio_files(root: Path, limit: int | None = None) -> Iterator[Path]:
                     stack.append(resolved_entry)
                 continue
             if entry.suffix.lower() not in AUDIO_EXTENSIONS:
+                continue
+            if any(marker in entry.stem.casefold() for marker in NON_MUSIC_FILENAME_MARKERS):
                 continue
             if not entry.is_file():
                 continue
@@ -138,6 +141,12 @@ def scan_music(runtime: Settings | StationContext) -> ScanResult:
                 conn.execute("delete from tracks where file_path = ?", (str(audio_path),))
                 continue
             metadata = read_metadata(audio_path)
+            try:
+                relative_parts = audio_path.resolve().relative_to(music_root.resolve()).parts
+            except (OSError, ValueError):
+                relative_parts = ()
+            if relative_parts and relative_parts[0].casefold() == "rock":
+                metadata["genre"] = "rock"
             metadata["duration_seconds"] = analysis.duration_seconds
             metadata["file_path"] = str(analysis.source_path)
             conn.execute(
@@ -175,6 +184,7 @@ def scan_music(runtime: Settings | StationContext) -> ScanResult:
             if indexed % 250 == 0:
                 conn.commit()
         _remove_missing_station_tracks(conn, music_root)
+        _remove_ineligible_station_tracks(conn, music_root)
         log_event(conn, "info", f"Music scan complete: {found} tracks found.", {"music_dir": str(music_root)})
         if found == 0:
             log_event(conn, "info", "Radio loop not started because no playable tracks exist.")
@@ -196,6 +206,17 @@ def _remove_missing_station_tracks(conn, music_root: Path) -> None:
     for (file_path,) in rows:
         candidate = Path(file_path).resolve()
         if _is_within_root(candidate, resolved_root) and not candidate.is_file():
+            conn.execute("delete from tracks where file_path = ?", (str(candidate),))
+
+
+def _remove_ineligible_station_tracks(conn, music_root: Path) -> None:
+    resolved_root = music_root.resolve()
+    rows = conn.execute("select file_path from tracks").fetchall()
+    for (file_path,) in rows:
+        candidate = Path(file_path).resolve()
+        if _is_within_root(candidate, resolved_root) and any(
+            marker in candidate.stem.casefold() for marker in NON_MUSIC_FILENAME_MARKERS
+        ):
             conn.execute("delete from tracks where file_path = ?", (str(candidate),))
 
 

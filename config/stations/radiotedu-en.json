@@ -6,8 +6,8 @@
   "locale": "en-US",
   "timezone": "Europe/Istanbul",
   "public": {
-    "route": "/ai/en",
-    "compatibility_routes": ["/ai"],
+    "route": "/ai",
+    "compatibility_routes": [],
     "snapshot_endpoint": "/v1/radio/stations/radiotedu-en/snapshot",
     "status_endpoint": "/v1/radio/stations/radiotedu-en/status",
     "stream_url": "https://stream.radiotedu.com/en"

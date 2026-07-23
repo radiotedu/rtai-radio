@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -25,7 +26,7 @@ _STATION_LIQUIDSOAP = {
     },
 }
 
-_AAC_192_ENCODER = '%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)'
+_AAC_192_ENCODER = '%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))'
 
 
 def liquidsoap_pid_path(settings: Settings) -> Path:
@@ -70,9 +71,6 @@ radio = crossfade(
   duration=0.0,
   fade_in=0.0,
   fade_out=0.0,
-  smart=true,
-  conservative=true,
-  assume_autocue=true,
   radio
 )
 
@@ -83,8 +81,11 @@ radio = blank.detect(
   min_noise=0.05,
   threshold=-60.0,
   track_sensitive=false,
-  fun () -> log("RadioTEDU primary source degraded after 1.0s below -60 dBFS"),
   radio
+)
+radio.on_blank(
+  synchronous=false,
+  fun () -> log("RadioTEDU primary source degraded after 1.0s below -60 dBFS")
 )
 radio = blank.skip(
   threshold=-60.0,
@@ -224,9 +225,6 @@ radio = crossfade(
   duration=0.0,
   fade_in=0.0,
   fade_out=0.0,
-  smart=true,
-  conservative=true,
-  assume_autocue=true,
   radio
 )
 
@@ -237,8 +235,11 @@ radio = blank.detect(
   min_noise=0.05,
   threshold=-60.0,
   track_sensitive=false,
-  fun () -> log("RadioTEDU primary source degraded after 1.0s below -60 dBFS"),
   radio
+)
+radio.on_blank(
+  synchronous=false,
+  fun () -> log("RadioTEDU primary source degraded after 1.0s below -60 dBFS")
 )
 radio = blank.skip(
   threshold=-60.0,
@@ -371,11 +372,11 @@ def liquidsoap_encoder_preflight(
             build_config = ""
         else:
             build_config = f"{completed.stdout}\n{completed.stderr}"
-    supported = "fdkaac" in build_config.lower()
+    supported = bool(re.search(r"(?im)^\s*(?:-\s*)?FFmpeg\s*:\s*yes\b", build_config))
     return {
         "encoder_profile": "aac_192",
         "encoder_supported": supported,
-        "reason": None if supported else "fdkaac_unavailable",
+        "reason": None if supported else "ffmpeg_unavailable",
     }
 
 

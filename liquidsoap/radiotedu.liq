@@ -14,7 +14,7 @@ radio = playlist(id="RadioTEDU", mode="normal", reload=1, reload_mode="watch", q
 radio = mksafe(radio)
 
 output.icecast(
-  %fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true),
+  %ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000)),
   host=host,
   port=port,
   user="source",

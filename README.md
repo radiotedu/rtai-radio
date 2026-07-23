@@ -1,6 +1,8 @@
 # RadioTEDU
 
-RadioTEDU is a local-first dual-station AI radio system. English (`radiotedu-en`) and French (`radiotedu-fr`) run as isolated station processes with fixed Icecast mounts `/en` and `/fr`; each owns its own autonomous orchestrator, database, rundown, queues, fallback playlist, Liquidsoap process, health, metadata, and logs. One top-level supervisor and one process-level `PublicSyncService` coordinate lifecycle and public status without controlling music selection.
+RadioTEDU is a local-first dual-station AI radio system. English (`radiotedu-en`) and French (`radiotedu-fr`) run as isolated station processes; each owns its own autonomous orchestrator, database, rundown, queues, fallback playlist, Liquidsoap process, health, metadata, and logs. One top-level supervisor and one process-level `PublicSyncService` coordinate lifecycle and public status without controlling music selection.
+
+The listener website is `https://radiotedu.com/ai`. The current release-pinned browser audio URLs are English `https://stream.radiotedu.com/ai` and French `https://stream.radiotedu.com/event`. The durable station contract still documents canonical `/en` and `/fr` identities for signed-status compatibility; do not substitute those for the current browser mapping without an explicit migration.
 
 There is no demo mode and no invented listening data. Add your own local music before starting playback. If no playable music exists, the backend and dashboard still run, the station stays idle, and the dashboard asks you to add music and rescan.
 
@@ -29,12 +31,12 @@ Open `http://localhost:5173`.
 
 ## Builder handoff
 
-This repository is prepared on a builder computer and then transferred through the verified `feature/dual-station-radiotedu` branch. The two—and only two—target-machine Codex instructions are:
+This repository contains the listener website, broadcast runtime, metadata agent, Windows service packaging, health dashboard, deployment verification and tests. The two—and only two—target-machine Codex instructions are:
 
 - `handoff/broadcast-server/prompt.md`
 - `handoff/web-server/prompt.md`
 
-Each target Codex performs its own discovery, protected configuration, installation, and staging checks. Both handoffs stop after staging and conformance verification unless production deployment is explicitly authorized.
+Each target Codex performs its own discovery, protected configuration, installation and verification. Secrets, local music, Qwen model weights, generated Qwen audio, live runtime state, logs and caches are intentionally excluded from Git.
 
 ## Current Music Library
 
@@ -301,7 +303,7 @@ print("Render each approved station profile on the target machine.")
 PY
 ```
 
-The installed Liquidsoap build must support FDK-AAC. Missing FDK-AAC is a hard preflight failure; do not fall back to MP3. The rendered encoder is `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)` with `public=true` and source username `source`.
+The installed native Windows Liquidsoap build must support FFmpeg encoding. Missing FFmpeg support is a hard preflight failure; do not fall back to MP3. The rendered encoder is `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))` with `public=true` and source username `source`.
 
 The website server renders signed snapshots at `/ai`, `/ai/en`, and `/ai/fr` without exposing the broadcast computer, local file paths, logs, or admin controls. English and French players use the fixed public `/en` and `/fr` stream URLs above.
 

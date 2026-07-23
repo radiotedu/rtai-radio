@@ -24,20 +24,27 @@ def _settings(tmp_path: Path, *, compatibility: bool = True) -> Settings:
 def _frontend(tmp_path: Path) -> Path:
     frontend = tmp_path / "dist" / "frontend"
     (frontend / "assets").mkdir(parents=True)
+    (frontend / "brand").mkdir(parents=True)
+    (frontend / "programs").mkdir(parents=True)
     (frontend / "index.html").write_text("<!doctype html><title>RadioTEDU</title>", encoding="utf-8")
     (frontend / "assets" / "listener.js").write_text("export {};", encoding="utf-8")
+    (frontend / "brand" / "radiotedu.png").write_bytes(b"brand")
+    (frontend / "programs" / "night_lab.png").write_bytes(b"cover")
     return frontend
 
 
-def test_public_app_serves_bilingual_listener_routes_and_only_public_api(tmp_path: Path) -> None:
+def test_public_app_serves_single_bilingual_listener_route_and_only_public_api(tmp_path: Path) -> None:
     client = TestClient(create_public_app(_settings(tmp_path), frontend_dist=_frontend(tmp_path)))
 
-    for path in ("/ai", "/ai/en", "/ai/fr"):
-        response = client.get(path)
-        assert response.status_code == 200
-        assert "RadioTEDU" in response.text
+    response = client.get("/ai")
+    assert response.status_code == 200
+    assert "RadioTEDU" in response.text
+    assert client.get("/ai/en").status_code == 404
+    assert client.get("/ai/fr").status_code == 404
 
     assert client.get("/assets/listener.js").status_code == 200
+    assert client.get("/brand/radiotedu.png").status_code == 200
+    assert client.get("/programs/night_lab.png").status_code == 200
     schema = client.get("/openapi.json").json()
     paths = " ".join(schema["paths"]).lower()
     assert "/v1/radio/stations/{station_id}/status" in schema["paths"]

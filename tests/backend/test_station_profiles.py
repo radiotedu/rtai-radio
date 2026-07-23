@@ -27,8 +27,8 @@ def make_profile(station_id: str = "radiotedu-en") -> StationProfile:
         locale="en-US",
         timezone="Europe/Istanbul",
         public=PublicProfile(
-            route="/ai/en",
-            compatibility_routes=("/ai",),
+            route="/ai",
+            compatibility_routes=(),
             snapshot_endpoint=f"/v1/radio/stations/{station_id}/snapshot",
             status_endpoint=f"/v1/radio/stations/{station_id}/status",
             stream_url="https://stream.radiotedu.com/en",
@@ -49,7 +49,7 @@ def make_profile(station_id: str = "radiotedu-en") -> StationProfile:
 
 def test_station_profile_is_nested_and_immutable() -> None:
     profile = make_profile()
-    assert profile.public.compatibility_routes == ("/ai",)
+    assert profile.public.compatibility_routes == ()
     assert profile.audio.minimum_qwen_buffer == 5
     with pytest.raises(FrozenInstanceError):
         profile.display_name = "changed"  # type: ignore[misc]
@@ -271,8 +271,8 @@ def test_english_compatibility_adapter_preserves_direct_settings() -> None:
     assert context.profile.station_id == "radiotedu-en"
     assert context.profile.language == "en"
     assert context.profile.locale == "en-US"
-    assert context.profile.public.route == "/ai/en"
-    assert context.profile.public.compatibility_routes == ("/ai",)
+    assert context.profile.public.route == "/ai"
+    assert context.profile.public.compatibility_routes == ()
     assert context.profile.public.stream_url == settings.public_stream_url
     assert context.profile.audio.minimum_qwen_buffer == 5
     coerced = coerce_station_context(settings)
@@ -390,8 +390,8 @@ def test_canonical_profiles_have_frozen_identity() -> None:
         locale="en-US",
         timezone="Europe/Istanbul",
         public=PublicProfile(
-            route="/ai/en",
-            compatibility_routes=("/ai",),
+            route="/ai",
+            compatibility_routes=(),
             snapshot_endpoint="/v1/radio/stations/radiotedu-en/snapshot",
             status_endpoint="/v1/radio/stations/radiotedu-en/status",
             stream_url="https://stream.radiotedu.com/en",
@@ -426,7 +426,7 @@ def test_canonical_profiles_have_frozen_identity() -> None:
         locale="fr-FR",
         timezone="Europe/Istanbul",
         public=PublicProfile(
-            route="/ai/fr",
+            route="/ai",
             compatibility_routes=(),
             snapshot_endpoint="/v1/radio/stations/radiotedu-fr/snapshot",
             status_endpoint="/v1/radio/stations/radiotedu-fr/status",
@@ -456,7 +456,7 @@ def test_canonical_profiles_have_frozen_identity() -> None:
     )
 
 
-def test_profiles_have_no_shared_writable_or_identity_values() -> None:
+def test_profiles_share_only_the_single_listener_page() -> None:
     profiles = load_station_profiles("config/stations")
     english, french = profiles["radiotedu-en"], profiles["radiotedu-fr"]
 
@@ -465,9 +465,8 @@ def test_profiles_have_no_shared_writable_or_identity_values() -> None:
     assert english.runtime.log_root != french.runtime.log_root
     assert english.audio.stream_mount != french.audio.stream_mount
     assert english.snapshot_secret_ref != french.snapshot_secret_ref
-    english_routes = {english.public.route, *english.public.compatibility_routes}
-    french_routes = {french.public.route, *french.public.compatibility_routes}
-    assert english_routes.isdisjoint(french_routes)
+    assert english.public.route == french.public.route == "/ai"
+    assert english.public.compatibility_routes == french.public.compatibility_routes == ()
 
 
 def _canonical_raw(station_id: str = "radiotedu-en") -> dict[str, object]:
@@ -566,7 +565,7 @@ def test_frozen_station_identity_rejects_mixed_or_alternate_values(tmp_path: Pat
         "display_name": lambda: raw.__setitem__("display_name", "RadioTEDU English"),
         "language_locale": lambda: (raw.__setitem__("language", "fr"), raw.__setitem__("locale", "fr-FR")),
         "public_route": lambda: public.__setitem__("route", "/ai/english"),
-        "compatibility_routes": lambda: public.__setitem__("compatibility_routes", []),
+        "compatibility_routes": lambda: public.__setitem__("compatibility_routes", ["/ai-old"]),
         "snapshot_endpoint": lambda: public.__setitem__("snapshot_endpoint", "/v1/radio/stations/radiotedu-en/other"),
         "status_endpoint": lambda: public.__setitem__("status_endpoint", "/v1/radio/stations/radiotedu-en/other"),
         "stream_url": lambda: public.__setitem__("stream_url", "https://stream.radiotedu.com/other"),

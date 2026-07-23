@@ -56,8 +56,8 @@ def request_text(base_url: str, path: str) -> dict:
 def run_smoke(base_url: str) -> dict:
     results: dict[str, object] = {
         "ai": request_text(base_url, "/ai"),
-        "ai_en": request_text(base_url, "/ai/en"),
-        "ai_fr": request_text(base_url, "/ai/fr"),
+        "ai_en_absent": request_text(base_url, "/ai/en"),
+        "ai_fr_absent": request_text(base_url, "/ai/fr"),
     }
     openapi = request_json(base_url, "/openapi.json")
     schema_paths = " ".join((openapi.get("json") or {}).get("paths", {})).lower()
@@ -84,7 +84,11 @@ def run_smoke(base_url: str) -> dict:
             "active_website_listeners": metrics.get("active_website_listeners"),
         }
     results["stations"] = station_results
-    results["ok"] = all(results[key]["ok"] for key in ("ai", "ai_en", "ai_fr", "openapi")) and all(
+    absent_routes_ok = all(
+        not results[key]["ok"] and results[key]["status"] == 404
+        for key in ("ai_en_absent", "ai_fr_absent")
+    )
+    results["ok"] = results["ai"]["ok"] and absent_routes_ok and results["openapi"]["ok"] and all(
         station["ok"] for station in station_results.values()
     )
     return results

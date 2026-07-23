@@ -79,8 +79,8 @@ def _english_compatibility_profile(settings: Settings) -> StationProfile:
         "en-US",
         "Europe/Istanbul",
         PublicProfile(
-            "/ai/en",
-            ("/ai",),
+            "/ai",
+            (),
             "/v1/radio/stations/radiotedu-en/snapshot",
             "/v1/radio/stations/radiotedu-en/status",
             settings.public_stream_url or "https://stream.radiotedu.com/en",

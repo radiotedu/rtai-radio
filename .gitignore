@@ -8,6 +8,11 @@ __pycache__/
 .pytest_cache/
 .worktrees/
 .superpowers/
+/cache/
+/code_changes/
+/data/diagnostics/
+/data/runtime/
+/media/
 data/radiotedu.db
 data/*.db-journal
 data/liquidsoap/queue.m3u
@@ -15,3 +20,9 @@ logs/
 backend/static/generated/tts/*.wav
 backend/static/generated/tts/*.txt
 backend/static/generated/clips/*
+handoff/web-server/RadioTEDU-web-handoff.zip
+handoff/web-server/RadioTEDU-web-handoff.sha256
+*.safetensors
+*.ckpt
+*.pth
+*.onnx

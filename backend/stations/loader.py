@@ -16,8 +16,8 @@ FROZEN_IDENTITIES: dict[str, dict[str, Any]] = {
         "language": "en",
         "locale": "en-US",
         "timezone": "Europe/Istanbul",
-        "public.route": "/ai/en",
-        "public.compatibility_routes": ("/ai",),
+        "public.route": "/ai",
+        "public.compatibility_routes": (),
         "public.snapshot_endpoint": "/v1/radio/stations/radiotedu-en/snapshot",
         "public.status_endpoint": "/v1/radio/stations/radiotedu-en/status",
         "public.stream_url": "https://stream.radiotedu.com/en",
@@ -39,7 +39,7 @@ FROZEN_IDENTITIES: dict[str, dict[str, Any]] = {
         "language": "fr",
         "locale": "fr-FR",
         "timezone": "Europe/Istanbul",
-        "public.route": "/ai/fr",
+        "public.route": "/ai",
         "public.compatibility_routes": (),
         "public.snapshot_endpoint": "/v1/radio/stations/radiotedu-fr/snapshot",
         "public.status_endpoint": "/v1/radio/stations/radiotedu-fr/status",
@@ -277,7 +277,6 @@ def load_station_profiles(directory: str | Path) -> dict[str, StationProfile]:
         raise StationProfileError(f"profile set must contain exactly: {expected}")
     _validate_writable_isolation(profiles)
     unique_groups = {
-        "route": [route for profile in profiles for route in (profile.public.route, *profile.public.compatibility_routes)],
         "snapshot_endpoint": [profile.public.snapshot_endpoint for profile in profiles],
         "status_endpoint": [profile.public.status_endpoint for profile in profiles],
         "stream_mount": [profile.audio.stream_mount for profile in profiles],

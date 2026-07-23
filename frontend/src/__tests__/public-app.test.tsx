@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
@@ -30,7 +31,7 @@ function statusFor(stationId: StationId): StationPublicStatusResponse {
     snapshot: {
       protocol: 'radiotedu-platform/v1',
       schema_version: 2,
-      station: { id: stationId, language, display_name: `RadioTEDU ${language}` },
+      station: { id: stationId, language, display_name: language === 'en' ? 'RadioTEDU English' : 'RadioTEDU Français' },
       sequence: 1,
       generated_at: '2026-07-15T10:00:00Z',
       expires_at: null,
@@ -62,22 +63,37 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-describe('public listener routes', () => {
-  it.each([
-    ['/ai', 'radiotedu-en', 'RadioTEDU English'],
-    ['/ai/en', 'radiotedu-en', 'RadioTEDU English'],
-    ['/ai/fr', 'radiotedu-fr', 'RadioTEDU Français'],
-  ] as const)('maps %s to the isolated %s station', async (path, stationId, heading) => {
-    window.history.replaceState({}, '', path);
-    fetchStation.mockResolvedValue(statusFor(stationId));
+describe('public listener route', () => {
+  it('maps the single /ai route to the English station by default', async () => {
+    window.history.replaceState({}, '', '/ai');
+    fetchStation.mockResolvedValue(statusFor('radiotedu-en'));
 
     const view = render(<App />);
 
-    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(fetchStation).toHaveBeenCalledWith(stationId);
-    await waitFor(() => expect(postSession).toHaveBeenCalledWith(stationId, 'start', expect.any(String)));
+    expect(await screen.findByRole('img', { name: 'RadioTEDU' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'RadioTEDU AI' })).toBeInTheDocument();
+    const listener = screen.getByLabelText('RadioTEDU English listener');
+    expect(within(listener).getByText('Current listeners')).toBeInTheDocument();
+    expect(within(listener).getByText('0')).toBeInTheDocument();
+    expect(within(listener).getByRole('button', { name: 'Listen live' })).toBeInTheDocument();
+    expect(fetchStation).toHaveBeenCalledWith('radiotedu-en');
+    await waitFor(() => expect(postSession).toHaveBeenCalledWith('radiotedu-en', 'start', expect.any(String)));
 
     view.unmount();
-    expect(postSession).toHaveBeenCalledWith(stationId, 'end', expect.any(String), true);
+    expect(postSession).toHaveBeenCalledWith('radiotedu-en', 'end', expect.any(String), true);
+  });
+
+  it('switches to French in place without creating another page route', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, '', '/ai');
+    fetchStation.mockImplementation(async (stationId) => statusFor(stationId));
+
+    render(<App />);
+    await screen.findByRole('button', { name: 'FR' });
+    await user.click(screen.getByRole('button', { name: 'FR' }));
+
+    await waitFor(() => expect(fetchStation).toHaveBeenCalledWith('radiotedu-fr'));
+    expect(window.location.pathname).toBe('/ai');
+    expect(screen.getByRole('button', { name: 'FR' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

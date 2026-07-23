@@ -63,6 +63,25 @@ def test_broadcast_runner_declares_backend_orchestrator_and_backoff_contract() -
     assert "public_sync.stop_background()" in runner
 
 
+def test_windows_services_use_native_pywin32_hosts_and_fail_closed_start() -> None:
+    service_host = (ROOT / "packaging" / "broadcast" / "windows_service_host.py").read_text(encoding="utf-8")
+    installer = (ROOT / "packaging" / "broadcast" / "install-services.ps1").read_text(encoding="utf-8")
+
+    assert "RadioTEDUSharedAIService" in service_host
+    assert "RadioTEDUBroadcastSupervisorService" in service_host
+    assert "win32serviceutil.ServiceFramework" in service_host
+    assert "taskkill.exe" in service_host
+    assert "windows_service_host.py" in installer
+    assert "InitializeConfig" in installer
+    assert "smoke_broadcast.py" in installer
+    assert "Strict dual-station smoke failed" in installer
+    assert '"--startup", "manual"' in installer
+    assert "[switch]$Automatic" in installer
+    assert "sc.exe config $service start= delayed-auto" in installer
+    assert "CHILD_RESTART_DELAYS_SECONDS" in service_host
+    assert "sc.exe create" not in installer
+
+
 def test_two_machine_runbooks_and_smoke_scripts_exist() -> None:
     broadcast_runbook = ROOT / "docs" / "BROADCAST_COMPUTER_RUNBOOK.md"
     website_runbook = ROOT / "docs" / "WEBSITE_SERVER_RUNBOOK.md"
@@ -139,7 +158,7 @@ def test_required_local_streaming_and_sync_helpers_exist() -> None:
     assert "sign_platform_headers" in public_sync
     assert "idempotency_key" in public_sync
     assert "station_public_events" in public_sync
-    assert "%fdkaac(bitrate=192" in liq_template
+    assert '%ffmpeg(format="adts", %audio(codec="aac", b="192k"' in liq_template
     assert 'mount=mount' in liq_template
     assert 'user="source"' in liq_template
     assert "public=true" in liq_template
@@ -151,10 +170,22 @@ def test_required_local_streaming_and_sync_helpers_exist() -> None:
 def test_windows_package_uses_one_supervisor_and_one_shared_ai_service() -> None:
     installer = (ROOT / "packaging" / "broadcast" / "install-services.ps1").read_text(encoding="utf-8")
     runner = (ROOT / "packaging" / "broadcast" / "run-service.ps1").read_text(encoding="utf-8")
+    windows_installer = (ROOT / "packaging" / "broadcast" / "install-liquidsoap-windows.ps1").read_text(
+        encoding="utf-8"
+    )
     env_files = sorted(path.name for path in (ROOT / "packaging" / "broadcast" / "service-env").glob("*.example"))
 
     assert '"RadioTEDU.SharedAI", "RadioTEDU.BroadcastSupervisor"' in installer
     assert "scripts.run_station_forever" in runner
+    assert "Test-ProtectedValue" in runner
+    assert "approved production voice pack" in runner
+    assert "warmed loopback Qwen service" in runner
+    assert "service-visible FFmpeg encoding" in runner
+    assert '[string]$Version = "2.4.5"' in windows_installer
+    assert '$archiveName = "liquidsoap-$Version-win64.zip"' in windows_installer
+    assert "17C29C9F662DB11CED6B85E807F6038E15E32B76F30F9695506905879A43F4B6" in windows_installer
+    assert "FFmpeg" in windows_installer
+    assert "LIQUIDSOAP_COMMAND" in windows_installer
     assert "RadioTEDU.Station.EN" not in installer + runner
     assert "RadioTEDU.Station.FR" not in installer + runner
     assert "RadioTEDU.PublicSync" not in installer + runner

@@ -16,7 +16,7 @@ Stop after staging and conformance verification. Stop before production: do not 
 - Source username: `source`
 - Mounts: `/en`, `/fr`
 - Encoder: `aac_192`, AAC-LC 192 kbps
-- Liquidsoap encoder: `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`
+- Liquidsoap encoder: `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))`
 - Directory listing: `public=true`
 - Public streams: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
 - Icecast-only origin: `https://stream.radiotedu.com`, exposing only the public audio mounts `/en` and `/fr`; it does not host the listener UI or API.
@@ -64,7 +64,7 @@ The Icecast host is intentionally shared and is one acknowledged failure domain.
 4. Copy the service environment examples into `C:\ProgramData\RadioTEDU\config`, apply ACLs for the service identity and administrators, then inject secrets without revealing them.
 5. Configure the real station media roots from supplied local media. Preserve separate EN/FR databases, rundowns, queues, announcement caches, fallback playlists, talk-over output, and log roots. Do not invent tracks, artists, play events, listener counts, or program data.
 6. Verify Qwen/Ollama and TTS remain loopback-only. Validate approved male/female EN/FR references and `Radio TED U` pronunciation, then prove each station has four hours planned, 60 minutes rendered, and six hours of fallback coverage. Announcement counts are diagnostic only and never replace duration readiness.
-7. Verify the installed Liquidsoap build advertises FDK-AAC. Treat missing FDK-AAC as a hard preflight failure; do not fall back to MP3 or another AAC encoder.
+7. Install the official native Windows Liquidsoap build with `packaging/broadcast/install-liquidsoap-windows.ps1`. Verify it advertises FFmpeg support and that the local AAC qualification produces AAC-LC, stereo, 48 kHz, approximately 192 kbps ADTS. Treat a failed qualification as a hard preflight failure; do not fall back to MP3.
 8. Render both Liquidsoap configs and inspect redacted output for the exact host, port, source username, mount, AAC-LC encoder, 192 kbps, metadata, and public listing. No password may appear in evidence or logs.
 9. Run the two Windows services from `packaging/broadcast`: `RadioTEDU.SharedAI` and `RadioTEDU.BroadcastSupervisor`. Do not recreate separate EN, FR, or PublicSync Windows services.
 

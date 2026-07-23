@@ -19,7 +19,7 @@ This runbook applies only to the broadcasting computer. The builder machine does
 
 `https://stream.radiotedu.com` is Icecast-only and exposes the `/en` and `/fr` audio mounts; it does not host HTML, the listener UI, or an API. The single listener page is `https://radiotedu.com/ai`, hosted by the website computer with an in-page EN/FR station selector. Do not create `/ai/en` or `/ai/fr`.
 
-Both use source username `source`, profile `aac_192`, AAC-LC 192 kbps, and `public=true`. Liquidsoap must support FDK-AAC and render `%fdkaac(bitrate=192, aot="mpeg4_aac_lc", transmux="adts", afterburner=true)`. Missing FDK-AAC is a hard preflight failure.
+Both use source username `source`, profile `aac_192`, AAC-LC 192 kbps, and `public=true`. The official native Windows Liquidsoap build must support FFmpeg and render `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))`. Missing FFmpeg support is a hard preflight failure.
 
 The source credential shared during development must be rotated before production. Store the rotated value and HMAC secrets only in the protected service environment. Never include them in the repository, prompt, command history, logs, or evidence.
 
@@ -55,6 +55,43 @@ Inject these through the target secret store without revealing values:
 - `RADIOTEDU_FR_SOURCE_CREDENTIALS`
 - `RADIOTEDU_EN_SNAPSHOT_SECRET`
 - `RADIOTEDU_FR_SNAPSHOT_SECRET`
+
+After the website server is deployed and matching station secrets have been
+provisioned on both machines, authenticate both directions without exposing
+those values:
+
+```powershell
+python scripts\handshake_webserver.py --base-url https://api.radiotedu.com
+```
+
+The result is written to `data/runtime/web-handshake.json`. A successful result
+means the website accepted this computer's signed nonce and this computer
+verified the website's independently signed server nonce. Every later status
+write is still signed separately.
+
+## Windows logon autostart
+
+Install or refresh the current-user startup task with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-radio-autostart.ps1
+```
+
+The `RadioTEDU AI Broadcast` task runs after the `tedu` user signs in. It waits
+for Windows networking, starts the EN and FR watchdog supervisors only when
+they are missing, and opens the live health dashboard. It does not create
+duplicate supervisors.
+
+## Active desktop music library
+
+The temporary EN and FR services use:
+
+`C:\Users\tedu\Desktop\RadioTEDU Music Library\Audio`
+
+The library root contains the original-copy SHA-256 manifest, the complete
+MusicBrainz per-track report, ID3/audio-payload verification, database switch
+report and a README explaining the confidence policy. Former station music
+directories and timestamped SQLite backups remain available for rollback.
 
 The supervisor passes only the matching source credential to each station child and no HMAC secret. HMAC secrets stay with PublicSync.
 

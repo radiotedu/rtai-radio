@@ -8,8 +8,9 @@ from pathlib import Path
 
 from backend.config import Settings
 from backend.database import connect, init_db, now_iso
+from backend.imaging.library import ImagingLibrary, import_imaging
 from backend.orchestrator import AutonomousOrchestrator
-from backend.radio_agent import RadioAgent
+from backend.radio_agent import JINGLE_TITLE, RadioAgent
 from backend.rundown import CoverageStatus
 from backend.scheduler import current_program
 
@@ -74,6 +75,32 @@ def drain_without_sleep(agent: RadioAgent, played: list) -> None:
     agent.playback.play_next = play_next
 
 
+def import_test_jingles(tmp_path: Path, count: int = 6) -> Path:
+    source = tmp_path / "jingle-source"
+    source.mkdir()
+    for index in range(count):
+        write_wav(source / f"jingle-{index}.wav", duration_seconds=0.1 + index * 0.01)
+    release = tmp_path / "imaging-release"
+    import_imaging(source, release, station_id="radiotedu-en", category="jingle")
+    return release
+
+
+def insert_completed_track_plays(settings: Settings, count: int) -> None:
+    with connect(settings) as conn:
+        track_id = int(conn.execute("select id from tracks order by id limit 1").fetchone()[0])
+        program = current_program(settings)
+        for _ in range(count):
+            conn.execute(
+                """
+                insert into play_history (
+                    track_id, program_id, played_at, duration_seconds, source
+                ) values (?, ?, ?, 120, 'local_file')
+                """,
+                (track_id, program["id"], now_iso()),
+            )
+        conn.commit()
+
+
 def test_agent_maintains_duration_coverage_and_compatibility_readiness(tmp_path: Path) -> None:
     settings = runtime_settings(tmp_path)
     insert_tracks(settings)
@@ -91,6 +118,68 @@ def test_agent_maintains_duration_coverage_and_compatibility_readiness(tmp_path:
     assert readiness["fallback_seconds"] == coverage.fallback_seconds
     assert readiness["air_ready"] is True
     assert readiness["ready_to_broadcast"] is True
+
+
+def test_station_jingles_cycle_all_assets_after_each_three_completed_tracks(
+    tmp_path: Path,
+) -> None:
+    settings = runtime_settings(tmp_path)
+    settings.jingle_enabled = True
+    settings.jingle_interval_tracks = 3
+    settings.imaging_release_root = str(import_test_jingles(tmp_path))
+    insert_tracks(settings, count=1)
+    agent = RadioAgent(settings)
+    library = ImagingLibrary.open(settings.imaging_release_root, "radiotedu-en")
+    selected_paths: list[str] = []
+
+    for _ in range(6):
+        insert_completed_track_plays(settings, 3)
+        selected = agent._next_jingle_item()
+        assert selected is not None
+        selected_paths.append(selected.file_path)
+        with connect(settings) as conn:
+            conn.execute(
+                """
+                insert into station_public_events (
+                    event_type, occurred_at, classification, duration_seconds,
+                    program_id, title, metadata_json
+                ) values ('play.completed', ?, 'music', ?, null, ?, '{}')
+                """,
+                (now_iso(), selected.duration_seconds, JINGLE_TITLE),
+            )
+            conn.commit()
+
+    assert selected_paths == [str(path) for path in library.asset_paths()]
+    assert agent._next_jingle_item() is None
+
+
+def test_due_jingle_plays_before_ready_music_and_is_publicly_classified(
+    tmp_path: Path,
+) -> None:
+    settings = runtime_settings(tmp_path)
+    settings.jingle_enabled = True
+    settings.jingle_interval_tracks = 3
+    settings.imaging_release_root = str(import_test_jingles(tmp_path, count=1))
+    insert_tracks(settings, count=1)
+    insert_completed_track_plays(settings, 3)
+    agent = RadioAgent(settings)
+    agent.maintain_rundown(max_render_items=0)
+    played: list = []
+    drain_without_sleep(agent, played)
+
+    result = agent.queue_next_ready_rundown_item()
+
+    assert result["started"] is True
+    assert [item.item_type for item in played] == ["imaging", "track"]
+    with connect(settings) as conn:
+        event = conn.execute(
+            """
+            select classification, title from station_public_events
+            where title=? order by id desc limit 1
+            """,
+            (JINGLE_TITLE,),
+        ).fetchone()
+    assert dict(event) == {"classification": "music", "title": JINGLE_TITLE}
 
 
 def test_operator_observability_reports_station_duration_coverage(tmp_path: Path) -> None:

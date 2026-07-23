@@ -16,6 +16,7 @@ from .database import connect, init_db, log_event, now_iso, rows_to_dicts
 from .editorial import build_pop_liner, research_allowed
 from .editorial_research import EditorialResearchService, FactCard
 from .fallback_playlist import FallbackPlaylistBuilder
+from .imaging.library import ImagingError, ImagingLibrary
 from .llm import choose_track_with_llm, ollama_runtime_status
 from .playback import PlaybackController, QueueItem
 from .rundown import CoverageStatus, RundownPlanner
@@ -27,6 +28,9 @@ from .tts.contracts import AnnouncementLabel, QwenUnavailableError, SynthesisReq
 from .tts.factory import build_tts_provider
 from .tts.voice_policy import VoicePolicy
 from .weather.open_meteo import OpenMeteoWeatherProvider
+
+
+JINGLE_TITLE = "Radio TED U Jingle"
 
 
 class RadioAgent:
@@ -322,6 +326,7 @@ class RadioAgent:
             artist=track.get("artist"),
             track_id=int(track["id"]),
         )
+        jingle_item = self._next_jingle_item()
         announcement = (
             self._consume_ready_announcement(item.program_id, int(track["id"]))
             if item.program_id
@@ -331,7 +336,7 @@ class RadioAgent:
         decision = None
         transition = "none"
         editorial_mode = "music_only"
-        queued_count = 1
+        queued_count = 1 + int(jingle_item is not None)
 
         if announcement is not None:
             try:
@@ -358,6 +363,8 @@ class RadioAgent:
                 )
                 if decision.kind is SegueKind.TALK_OVER:
                     rendered = self.settings.tts_path / "talkovers" / f"rundown_{item.id}.wav"
+                    if jingle_item is not None:
+                        self.playback.add(jingle_item)
                     mixed = self.playback.queue_talkover(
                         speech_item,
                         track_item,
@@ -366,15 +373,19 @@ class RadioAgent:
                         renderer=self.talkover_renderer,
                     )
                     transition = "talk_over" if mixed else "sequential"
-                    queued_count = 1 if mixed else 2
+                    queued_count = (1 if mixed else 2) + int(jingle_item is not None)
                 else:
                     self.playback.add(speech_item)
+                    if jingle_item is not None:
+                        self.playback.add(jingle_item)
                     self.playback.add(track_item)
                     transition = "sequential"
-                    queued_count = 2
+                    queued_count = 2 + int(jingle_item is not None)
                 editorial_mode = "prepared_announcement"
                 self._record_rundown_transition(item.id, decision, transition, cue)
             except (OSError, RuntimeError, ValueError) as exc:
+                if jingle_item is not None:
+                    self.playback.add(jingle_item)
                 self.playback.add(track_item)
                 with connect(self._database_runtime) as conn:
                     log_event(
@@ -385,6 +396,8 @@ class RadioAgent:
                     )
                     conn.commit()
         else:
+            if jingle_item is not None:
+                self.playback.add(jingle_item)
             self.playback.add(track_item)
 
         played: list[QueueItem] = []
@@ -403,8 +416,13 @@ class RadioAgent:
             }
 
         speech_seconds = float(speech_item.duration_seconds or 0.0) if speech_item else 0.0
+        jingle_seconds = float(jingle_item.duration_seconds or 0.0) if jingle_item else 0.0
         track_seconds = float(track_item.duration_seconds or 0.0)
-        actual_seconds = track_seconds + (speech_seconds if transition == "sequential" else 0.0)
+        actual_seconds = (
+            track_seconds
+            + jingle_seconds
+            + (speech_seconds if transition == "sequential" else 0.0)
+        )
         if self.playback.backend == "liquidsoap":
             self.rundown_planner.mark_playing(
                 item.id,
@@ -414,6 +432,7 @@ class RadioAgent:
                     "transition": transition,
                     "editorial_mode": editorial_mode,
                     "speech_seconds": speech_seconds,
+                    "jingle_seconds": jingle_seconds,
                     "track_seconds": track_seconds,
                 },
             )
@@ -522,6 +541,7 @@ class RadioAgent:
                 float(metadata.get("track_seconds") or row["measured_duration_seconds"] or 0.0),
             )
             speech_seconds = max(0.0, float(metadata.get("speech_seconds") or 0.0))
+            jingle_seconds = max(0.0, float(metadata.get("jingle_seconds") or 0.0))
             transition = str(metadata.get("transition") or "none")
             completed = conn.execute(
                 """
@@ -550,6 +570,7 @@ class RadioAgent:
                     (occurred_at, classification, seconds, row["program_id"], title),
                 )
 
+            insert_airtime("music", jingle_seconds, JINGLE_TITLE)
             if transition == "talk_over":
                 talking = min(track_seconds, speech_seconds)
                 insert_airtime("talking", talking, "Radio TED U DJ")
@@ -1421,6 +1442,44 @@ class RadioAgent:
             )
             conn.commit()
 
+    def _next_jingle_item(self) -> QueueItem | None:
+        """Choose station imaging without ever making music playout depend on it."""
+
+        if not self.settings.jingle_enabled:
+            return None
+        try:
+            library = ImagingLibrary.open(
+                self.settings.imaging_release_root,
+                self.context.profile.station_id,
+            )
+        except (ImagingError, OSError, ValueError):
+            return None
+        if not library.assets:
+            return None
+        with connect(self._database_runtime) as conn:
+            completed_tracks = int(conn.execute("select count(*) from play_history").fetchone()[0])
+            completed_jingles = int(
+                conn.execute(
+                    """
+                    select count(*) from station_public_events
+                    where event_type='play.completed' and title=?
+                    """,
+                    (JINGLE_TITLE,),
+                ).fetchone()[0]
+            )
+        if completed_tracks < (completed_jingles + 1) * self.settings.jingle_interval_tracks:
+            return None
+        asset_index = completed_jingles % len(library.assets)
+        asset = library.assets[asset_index]
+        asset_path = library.asset_paths()[asset_index]
+        return QueueItem(
+            "imaging",
+            JINGLE_TITLE,
+            str(asset_path),
+            duration_seconds=asset.duration_seconds,
+            artist="RadioTEDU",
+        )
+
     @staticmethod
     def _speech_duration_seconds(file_path: str) -> float:
         try:
@@ -1475,7 +1534,14 @@ class RadioAgent:
     def _record_public_airtime(self, item: QueueItem, program_id: str | None) -> None:
         if item.item_type in {"tts", "speech", "announcement", "live"}:
             classification = "talking"
-        elif item.item_type in {"track", "music", "imaging_instrumental"}:
+        elif item.item_type in {
+            "track",
+            "music",
+            "imaging",
+            "jingle",
+            "sweeper",
+            "imaging_instrumental",
+        }:
             classification = "music"
         elif item.item_type == "silence":
             classification = "silence"
