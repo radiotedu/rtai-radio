@@ -307,6 +307,7 @@ class Rotation:
 
     def _sync_specific_cycle(self) -> None:
         ready_ids = self.announcements.ready_track_ids()
+        previous_pool_ids = self.specific_pool_ids
         eligible = [
             track
             for track in self.tracks
@@ -330,8 +331,10 @@ class Rotation:
             for track in self.specific_cycle[self.specific_index :]
             if track.track_id in eligible_ids
         ]
-        remaining_ids = {track.track_id for track in remaining}
-        additions = [track for track in eligible if track.track_id not in remaining_ids]
+        new_ids = eligible_ids - previous_pool_ids
+        additions = [track for track in eligible if track.track_id in new_ids]
+        if not remaining and not additions:
+            additions = eligible
         self.random.shuffle(additions)
         self.specific_pool_ids = eligible_ids
         self.specific_cycle = remaining + additions
