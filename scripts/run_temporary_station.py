@@ -38,6 +38,7 @@ DEFAULT_FFPROBE = DEFAULT_FFMPEG.with_name("ffprobe.exe")
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 REQUIRED_ANNOUNCEMENT_BUFFER = 5
 TARGET_ANNOUNCEMENT_BUFFER = 8
+MIN_TRACK_SPECIFIC_ROTATION_POOL = 8
 FALLBACK_TALKOVER_PROBABILITY = 1.0
 MAX_TRACKS_WITHOUT_TALKOVER = 0
 FALLBACK_TALKOVER_POLICY = {
@@ -275,17 +276,93 @@ class Rotation:
         self.planned_track_number = 0
         self.tracks_without_voice = 0
         self.last_fallback_use: dict[str, int] = {}
+        self.last_track_id: int | None = None
+        self.specific_pool_ids: frozenset[int] = frozenset()
+        self.specific_cycle: list[Item] = []
+        self.specific_index = 0
         self.pending: deque[Item] = deque()
         self.random.shuffle(self.tracks)
         self._top_up()
 
-    def _next_track(self) -> Item:
+    def _next_general_track(self) -> Item:
         if self.track_index >= len(self.tracks):
             self.track_index = 0
             self.random.shuffle(self.tracks)
         item = self.tracks[self.track_index]
         self.track_index += 1
+        if (
+            len(self.tracks) > 1
+            and item.track_id == self.last_track_id
+            and self.track_index < len(self.tracks)
+        ):
+            replacement = self.tracks[self.track_index]
+            self.tracks[self.track_index - 1], self.tracks[self.track_index] = (
+                replacement,
+                item,
+            )
+            item = replacement
+            self.track_index += 1
+        self.last_track_id = item.track_id
         return item
+
+    def _sync_specific_cycle(self) -> None:
+        ready_ids = self.announcements.ready_track_ids()
+        eligible = [
+            track
+            for track in self.tracks
+            if track.track_id is not None and track.track_id in ready_ids
+        ]
+        eligible_ids = frozenset(
+            int(track.track_id) for track in eligible if track.track_id is not None
+        )
+        if len(eligible_ids) < MIN_TRACK_SPECIFIC_ROTATION_POOL:
+            self.specific_pool_ids = eligible_ids
+            self.specific_cycle = []
+            self.specific_index = 0
+            return
+        if eligible_ids == self.specific_pool_ids and self.specific_index < len(
+            self.specific_cycle
+        ):
+            return
+
+        remaining = [
+            track
+            for track in self.specific_cycle[self.specific_index :]
+            if track.track_id in eligible_ids
+        ]
+        remaining_ids = {track.track_id for track in remaining}
+        additions = [track for track in eligible if track.track_id not in remaining_ids]
+        self.random.shuffle(additions)
+        self.specific_pool_ids = eligible_ids
+        self.specific_cycle = remaining + additions
+        self.specific_index = 0
+
+    def _next_track(self) -> Item:
+        self._sync_specific_cycle()
+        if self.specific_cycle:
+            if self.specific_index >= len(self.specific_cycle):
+                self.specific_cycle = [
+                    track
+                    for track in self.tracks
+                    if track.track_id in self.specific_pool_ids
+                ]
+                self.random.shuffle(self.specific_cycle)
+                self.specific_index = 0
+            if (
+                len(self.specific_cycle) > 1
+                and self.specific_cycle[self.specific_index].track_id
+                == self.last_track_id
+            ):
+                swap_index = (self.specific_index + 1) % len(self.specific_cycle)
+                self.specific_cycle[self.specific_index], self.specific_cycle[swap_index] = (
+                    self.specific_cycle[swap_index],
+                    self.specific_cycle[self.specific_index],
+                )
+            item = self.specific_cycle[self.specific_index]
+            self.specific_index += 1
+            self.last_track_id = item.track_id
+            return item
+        return self._next_general_track()
 
     @staticmethod
     def _fallback_role(item: Item) -> str:
@@ -574,6 +651,8 @@ class TemporaryStation:
                 "runtime_generation_required": self.announcements.queued_count > 0,
                 "verified_track_intros_ready": self.announcements.ready_count,
                 "verified_track_intros_queued": self.announcements.queued_count,
+                "track_specific_rotation_pool": len(self.rotation.specific_pool_ids),
+                "track_specific_rotation_required": MIN_TRACK_SPECIFIC_ROTATION_POOL,
             },
             "session_stats": {
                 **{key: round(float(value), 1) for key, value in self.counters.items()},

@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,6 +71,45 @@ def test_bilingual_intros_are_deterministic_and_source_backed():
     assert "The Disco Song" in fr
 
 
+def test_track_intro_variants_are_stable_but_not_one_repeated_phrase():
+    en = {
+        render_intro(
+            "en",
+            f"Song {index}",
+            f"Artist {index}",
+            variant_key=f"radiotedu-en:{index}",
+        )
+        for index in range(100)
+    }
+    fr = {
+        render_intro(
+            "fr",
+            f"Chanson {index}",
+            f"Artiste {index}",
+            variant_key=f"radiotedu-fr:{index}",
+        )
+        for index in range(100)
+    }
+
+    assert any(text.startswith("On Radio TED U") for text in en)
+    assert any(text.startswith("You're with Radio TED U") for text in en)
+    assert any(text.startswith("Next on Radio TED U") for text in en)
+    assert any(text.startswith("Sur Radio TED U") for text in fr)
+    assert any(text.startswith("Vous êtes sur Radio TED U") for text in fr)
+    assert any(text.startswith("À suivre sur Radio TED U") for text in fr)
+    assert (
+        render_intro(
+            "fr",
+            "Chanson 7",
+            "Artiste 7",
+            variant_key="radiotedu-fr:7",
+        )
+        in fr
+    )
+    assert all("carefully selected" not in text.casefold() for text in en)
+    assert all("soigneusement choisi" not in text.casefold() for text in fr)
+
+
 def test_live_mix_contract_is_frozen():
     source = (ROOT / "scripts" / "run_temporary_station.py").read_text(
         encoding="utf-8"
@@ -86,6 +126,10 @@ def test_fallback_announcements_are_weighted_and_rate_limited(tmp_path):
     class NoPreparedAnnouncements:
         ready_count = 0
         queued_count = 0
+
+        @staticmethod
+        def ready_track_ids():
+            return frozenset()
 
         @staticmethod
         def resolve(track_id):
@@ -149,6 +193,57 @@ def test_fallback_announcements_are_weighted_and_rate_limited(tmp_path):
             longest_music_only_run = max(longest_music_only_run, current_music_only_run)
     assert longest_music_only_run <= station.MAX_TRACKS_WITHOUT_TALKOVER
     assert rotation.ready_items() == station.TARGET_ANNOUNCEMENT_BUFFER
+
+
+def test_rotation_uses_only_tracks_with_ready_specific_announcements(tmp_path):
+    station = load_temporary_station_module()
+    ready_ids = frozenset(range(1, 9))
+
+    class PreparedAnnouncements:
+        ready_count = len(ready_ids)
+        queued_count = 4
+
+        @staticmethod
+        def ready_track_ids():
+            return ready_ids
+
+        @staticmethod
+        def resolve(track_id):
+            if track_id not in ready_ids:
+                return None
+            return SimpleNamespace(
+                path=tmp_path / f"specific-{track_id}.wav",
+                duration_seconds=5.0,
+                text=f"Specific introduction for track {track_id}.",
+                fact_source_url=None,
+            )
+
+    tracks = [
+        station.Item(
+            path=tmp_path / f"track-{index}.wav",
+            kind="music",
+            title=f"Track {index}",
+            artist="Artist",
+            duration_seconds=180,
+            source="test",
+            track_id=index,
+        )
+        for index in range(1, 13)
+    ]
+    rotation = station.Rotation(
+        tracks,
+        [],
+        [],
+        PreparedAnnouncements(),
+        seed=7301,
+    )
+
+    planned = [rotation.next() for _ in range(24)]
+
+    assert {item.track_id for item in planned} <= ready_ids
+    assert all(item.source.endswith("+qwen_verified_track_intro") for item in planned)
+    assert all(item.voice_text and "Specific introduction" in item.voice_text for item in planned)
+    assert len(rotation.specific_pool_ids) == 8
 
 
 def test_missing_or_queued_audio_never_replaces_safe_fallback(tmp_path):

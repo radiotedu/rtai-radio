@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from backend.track_announcements import (
     cache_key,
+    identity,
     load_verified_facts,
     metadata_is_announceable,
     render_intro,
@@ -41,6 +42,19 @@ def sha256_file(path: Path) -> str:
 def build(station_id: str) -> dict:
     language = STATIONS[station_id]
     facts = load_verified_facts(FACTS_PATH)
+    existing_by_track_id: dict[int, dict] = {}
+    existing_manifest = OUTPUT_ROOT / f"{station_id}.json"
+    if existing_manifest.is_file():
+        existing_payload = json.loads(existing_manifest.read_text(encoding="utf-8"))
+        if (
+            existing_payload.get("schema_version") == 1
+            and existing_payload.get("station_id") == station_id
+        ):
+            existing_by_track_id = {
+                int(entry["track_id"]): entry
+                for entry in existing_payload.get("entries", [])
+                if entry.get("track_id") is not None
+            }
     database = ROOT / "data" / "stations" / station_id / "radio.db"
     connection = sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
@@ -64,7 +78,30 @@ def build(station_id: str) -> dict:
         ):
             continue
         fact = next((item for item in facts if item.matches(title, artist)), None)
-        text = render_intro(language, title, artist, fact)
+        existing = existing_by_track_id.get(int(row["id"]))
+        preserve_ready = False
+        if existing:
+            existing_text = " ".join(str(existing.get("text") or "").split())
+            existing_key = str(existing.get("cache_key") or "")
+            existing_asset = OUTPUT_ROOT / str(existing.get("asset_path") or "")
+            preserve_ready = bool(
+                existing.get("state") == "ready"
+                and identity(existing.get("title")) == identity(title)
+                and identity(existing.get("artist")) == identity(artist)
+                and existing_key == cache_key(station_id, existing_text)
+                and existing_asset.is_file()
+            )
+        text = (
+            " ".join(str(existing["text"]).split())
+            if preserve_ready and existing
+            else render_intro(
+                language,
+                title,
+                artist,
+                fact,
+                variant_key=f"{station_id}:{int(row['id'])}:{title}:{artist}",
+            )
+        )
         key = cache_key(station_id, text)
         relative_asset = f"{station_id}/{key}.wav"
         asset = OUTPUT_ROOT / relative_asset

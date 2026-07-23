@@ -129,7 +129,25 @@ class VerifiedFact:
         )
 
 
-def render_intro(language: str, title: str, artist: str, fact: VerifiedFact | None = None) -> str:
+def _weighted_variant_index(key: str, weights: tuple[int, ...]) -> int:
+    total = sum(weights)
+    roll = int.from_bytes(hashlib.sha256(key.encode("utf-8")).digest()[:8], "big") % total
+    cumulative = 0
+    for index, weight in enumerate(weights):
+        cumulative += weight
+        if roll < cumulative:
+            return index
+    return len(weights) - 1
+
+
+def render_intro(
+    language: str,
+    title: str,
+    artist: str,
+    fact: VerifiedFact | None = None,
+    *,
+    variant_key: str | None = None,
+) -> str:
     if language not in {"en", "fr"}:
         raise ValueError(f"unsupported language: {language}")
     if not metadata_is_announceable(title, artist):
@@ -137,9 +155,31 @@ def render_intro(language: str, title: str, artist: str, fact: VerifiedFact | No
     if fact is not None and not fact.matches(title, artist):
         raise ValueError("fact identity does not match the track")
     if language == "en":
-        base = f"On Radio TED U, this is {title} by {artist}."
+        variants = (
+            f"On Radio TED U, this is {title} by {artist}.",
+            f"You're with Radio TED U. Here is {artist} with {title}.",
+            f"Next on Radio TED U: {title}, from {artist}.",
+            f"{artist} on Radio TED U. This is {title}.",
+        )
+        index = (
+            0
+            if variant_key is None
+            else _weighted_variant_index(f"en:{variant_key}", (34, 27, 22, 17))
+        )
+        base = variants[index]
         return f"{base} {fact.text_en}" if fact else base
-    base = f"Sur Radio TED U, voici {title}, par {artist}."
+    variants = (
+        f"Sur Radio TED U, voici {title}, par {artist}.",
+        f"Vous êtes sur Radio TED U. Voici {artist}, avec {title}.",
+        f"À suivre sur Radio TED U : {title}, de {artist}.",
+        f"{artist} sur Radio TED U. Voici {title}.",
+    )
+    index = (
+        0
+        if variant_key is None
+        else _weighted_variant_index(f"fr:{variant_key}", (34, 27, 22, 17))
+    )
+    base = variants[index]
     return f"{base} {fact.text_fr}" if fact else base
 
 
@@ -175,6 +215,10 @@ class TrackAnnouncementAssetLibrary:
     def ready_count(self) -> int:
         self._reload_if_changed()
         return len(self._ready)
+
+    def ready_track_ids(self) -> frozenset[int]:
+        self._reload_if_changed()
+        return frozenset(self._ready)
 
     def resolve(self, track_id: int | None) -> ReadyAnnouncement | None:
         self._reload_if_changed()
