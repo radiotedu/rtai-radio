@@ -93,6 +93,24 @@ The DJ prompt is intentionally small and JSON-only. If Ollama is unavailable or 
 
 The dashboard separates configured model from runtime health. `health.llm` shows the requested model name, while `health.llm_runtime` checks the Ollama `/api/tags` endpoint and reports whether the server is reachable and whether the configured model is installed. The backend also exposes `GET /api/setup/ollama` for the same setup guidance used by the checker script.
 
+## Probabilistic live playout
+
+The temporary EN/FR live runtime uses fresh cryptographic entropy for every station
+session and selects music by randomized, no-replacement cycles. A restart therefore
+does not replay a fixed seed sequence.
+
+Track announcements are prepared ahead of airtime because CPU-only Qwen synthesis is
+slower than real time. Each eligible song keeps two independently rendered,
+song-specific Qwen variants. Playout selects among the variants with explicit
+weights and excludes the variant used on the previous play of that track when an
+alternative is ready. The background worker prioritizes the live `now`/`next`
+horizon and adds new variants atomically; an existing valid variant remains
+available throughout generation, so probability growth cannot create dead air.
+
+The live status exposes the selection modes, a non-secret session-seed fingerprint,
+ready variant counts, multi-variant track counts and queue depth. Qwen model weights,
+generated speech, runtime manifests and local music remain outside Git.
+
 ## Autonomous Orchestrator
 
 RadioTEDU can keep the station running continuously while the backend process is alive:

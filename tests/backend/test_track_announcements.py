@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import random
 import sys
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -132,6 +135,11 @@ def test_fallback_announcements_are_weighted_and_rate_limited(tmp_path):
             return frozenset()
 
         @staticmethod
+        def choose(track_id, rng, *, avoid_cache_key=None):
+            del track_id, rng, avoid_cache_key
+            return None
+
+        @staticmethod
         def resolve(track_id):
             del track_id
             return None
@@ -208,7 +216,8 @@ def test_rotation_uses_only_tracks_with_ready_specific_announcements(tmp_path):
             return ready_ids
 
         @staticmethod
-        def resolve(track_id):
+        def choose(track_id, rng, *, avoid_cache_key=None):
+            del rng, avoid_cache_key
             if track_id not in ready_ids:
                 return None
             return SimpleNamespace(
@@ -216,6 +225,7 @@ def test_rotation_uses_only_tracks_with_ready_specific_announcements(tmp_path):
                 duration_seconds=5.0,
                 text=f"Specific introduction for track {track_id}.",
                 fact_source_url=None,
+                cache_key=f"specific-{track_id}",
             )
 
     tracks = [
@@ -244,6 +254,117 @@ def test_rotation_uses_only_tracks_with_ready_specific_announcements(tmp_path):
     assert all(item.source.endswith("+qwen_verified_track_intro") for item in planned)
     assert all(item.voice_text and "Specific introduction" in item.voice_text for item in planned)
     assert len(rotation.specific_pool_ids) == 8
+
+
+def test_music_order_uses_explicit_entropy(tmp_path):
+    station = load_temporary_station_module()
+
+    class NoPreparedAnnouncements:
+        ready_count = 0
+        queued_count = 0
+
+        @staticmethod
+        def ready_track_ids():
+            return frozenset()
+
+        @staticmethod
+        def choose(track_id, rng, *, avoid_cache_key=None):
+            del track_id, rng, avoid_cache_key
+            return None
+
+    tracks = [
+        station.Item(
+            path=tmp_path / f"track-{index}.wav",
+            kind="music",
+            title=f"Track {index}",
+            artist="Artist",
+            duration_seconds=180,
+            source="test",
+            track_id=index,
+        )
+        for index in range(1, 41)
+    ]
+    qwen = [
+        station.Item(
+            path=tmp_path / "radio-id.wav",
+            kind="talking",
+            title="ID",
+            artist="RTAI",
+            duration_seconds=5,
+            source="qwen",
+        )
+    ]
+
+    def sequence(entropy):
+        rotation = station.Rotation(
+            tracks,
+            [],
+            qwen,
+            NoPreparedAnnouncements(),
+            seed=7301,
+            entropy=entropy,
+        )
+        return [rotation.next().track_id for _ in range(30)]
+
+    assert sequence(111) == sequence(111)
+    assert sequence(111) != sequence(222)
+
+
+def test_multiple_ready_variants_are_weighted_and_anti_repeating(tmp_path):
+    station_id = "radiotedu-en"
+    asset_root = tmp_path / station_id
+    asset_root.mkdir()
+    texts = (
+        "On Radio TED U, this is Song by Artist.",
+        "Next on Radio TED U: Song, from Artist.",
+    )
+    entries = []
+    for variant_id, (text, weight) in enumerate(zip(texts, (80, 20))):
+        from backend.track_announcements import cache_key
+
+        key = cache_key(station_id, text)
+        path = asset_root / f"{key}.wav"
+        with wave.open(str(path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8000)
+            audio.writeframes(b"\x00\x00" * 8000)
+        entries.append(
+            {
+                "track_id": 7,
+                "variant_id": variant_id,
+                "weight": weight,
+                "text": text,
+                "cache_key": key,
+                "asset_path": f"{station_id}/{key}.wav",
+                "state": "ready",
+            }
+        )
+    (tmp_path / f"{station_id}.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "station_id": station_id,
+                "live_web_requests": False,
+                "entries": entries,
+            }
+        ),
+        encoding="utf-8",
+    )
+    library = TrackAnnouncementAssetLibrary(tmp_path, station_id)
+    rng = random.Random(7301)
+    selected = [library.choose(7, rng) for _ in range(2_000)]
+    classic = sum(item and item.variant_id == 0 for item in selected)
+
+    assert library.ready_track_count == 1
+    assert library.ready_count == 2
+    assert library.multi_variant_track_count == 1
+    assert 1_520 <= classic <= 1_680
+    first = library.choose(7, rng)
+    assert first is not None
+    second = library.choose(7, rng, avoid_cache_key=first.cache_key)
+    assert second is not None
+    assert first.cache_key != second.cache_key
 
 
 def test_missing_or_queued_audio_never_replaces_safe_fallback(tmp_path):

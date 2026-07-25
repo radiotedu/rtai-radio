@@ -39,6 +39,7 @@ TRUSTED_FACT_HOSTS = {
     "wikidata.org",
     "www.wikidata.org",
 }
+INTRO_VARIANT_WEIGHTS = (34, 27, 22, 17)
 
 
 def identity(value: object) -> str:
@@ -140,6 +141,24 @@ def _weighted_variant_index(key: str, weights: tuple[int, ...]) -> int:
     return len(weights) - 1
 
 
+def intro_variants(language: str, title: str, artist: str) -> tuple[str, ...]:
+    if language == "en":
+        return (
+            f"On Radio TED U, this is {title} by {artist}.",
+            f"You're with Radio TED U. Here is {artist} with {title}.",
+            f"Next on Radio TED U: {title}, from {artist}.",
+            f"{artist} on Radio TED U. This is {title}.",
+        )
+    if language == "fr":
+        return (
+            f"Sur Radio TED U, voici {title}, par {artist}.",
+            f"Vous êtes sur Radio TED U. Voici {artist}, avec {title}.",
+            f"À suivre sur Radio TED U : {title}, de {artist}.",
+            f"{artist} sur Radio TED U. Voici {title}.",
+        )
+    raise ValueError(f"unsupported language: {language}")
+
+
 def render_intro(
     language: str,
     title: str,
@@ -147,6 +166,7 @@ def render_intro(
     fact: VerifiedFact | None = None,
     *,
     variant_key: str | None = None,
+    variant_index: int | None = None,
 ) -> str:
     if language not in {"en", "fr"}:
         raise ValueError(f"unsupported language: {language}")
@@ -154,33 +174,24 @@ def render_intro(
         raise ValueError("track metadata is not safe to announce")
     if fact is not None and not fact.matches(title, artist):
         raise ValueError("fact identity does not match the track")
-    if language == "en":
-        variants = (
-            f"On Radio TED U, this is {title} by {artist}.",
-            f"You're with Radio TED U. Here is {artist} with {title}.",
-            f"Next on Radio TED U: {title}, from {artist}.",
-            f"{artist} on Radio TED U. This is {title}.",
+    if variant_key is not None and variant_index is not None:
+        raise ValueError("pass variant_key or variant_index, not both")
+    variants = intro_variants(language, title, artist)
+    if variant_index is not None:
+        if not 0 <= variant_index < len(variants):
+            raise ValueError("variant_index is outside the intro template set")
+        index = variant_index
+    elif variant_key is not None:
+        index = _weighted_variant_index(
+            f"{language}:{variant_key}",
+            INTRO_VARIANT_WEIGHTS,
         )
-        index = (
-            0
-            if variant_key is None
-            else _weighted_variant_index(f"en:{variant_key}", (34, 27, 22, 17))
-        )
-        base = variants[index]
-        return f"{base} {fact.text_en}" if fact else base
-    variants = (
-        f"Sur Radio TED U, voici {title}, par {artist}.",
-        f"Vous êtes sur Radio TED U. Voici {artist}, avec {title}.",
-        f"À suivre sur Radio TED U : {title}, de {artist}.",
-        f"{artist} sur Radio TED U. Voici {title}.",
-    )
-    index = (
-        0
-        if variant_key is None
-        else _weighted_variant_index(f"fr:{variant_key}", (34, 27, 22, 17))
-    )
+    else:
+        index = 0
     base = variants[index]
-    return f"{base} {fact.text_fr}" if fact else base
+    if not fact:
+        return base
+    return f"{base} {fact.text_en if language == 'en' else fact.text_fr}"
 
 
 def load_verified_facts(path: Path) -> list[VerifiedFact]:
@@ -198,6 +209,9 @@ class ReadyAnnouncement:
     duration_seconds: float
     text: str
     fact_source_url: str | None
+    cache_key: str = ""
+    variant_id: int = 0
+    weight: float = 1.0
 
 
 class TrackAnnouncementAssetLibrary:
@@ -208,13 +222,23 @@ class TrackAnnouncementAssetLibrary:
         self.station_id = station_id
         self.manifest_path = self.root / f"{station_id}.json"
         self._manifest_mtime_ns = -1
-        self._ready: dict[int, ReadyAnnouncement] = {}
+        self._ready: dict[int, tuple[ReadyAnnouncement, ...]] = {}
         self.queued_count = 0
 
     @property
     def ready_count(self) -> int:
         self._reload_if_changed()
+        return sum(len(options) for options in self._ready.values())
+
+    @property
+    def ready_track_count(self) -> int:
+        self._reload_if_changed()
         return len(self._ready)
+
+    @property
+    def multi_variant_track_count(self) -> int:
+        self._reload_if_changed()
+        return sum(1 for options in self._ready.values() if len(options) > 1)
 
     def ready_track_ids(self) -> frozenset[int]:
         self._reload_if_changed()
@@ -222,7 +246,32 @@ class TrackAnnouncementAssetLibrary:
 
     def resolve(self, track_id: int | None) -> ReadyAnnouncement | None:
         self._reload_if_changed()
-        return self._ready.get(int(track_id)) if track_id is not None else None
+        if track_id is None:
+            return None
+        options = self._ready.get(int(track_id), ())
+        return options[0] if options else None
+
+    def choose(
+        self,
+        track_id: int | None,
+        rng,
+        *,
+        avoid_cache_key: str | None = None,
+    ) -> ReadyAnnouncement | None:
+        self._reload_if_changed()
+        if track_id is None:
+            return None
+        options = list(self._ready.get(int(track_id), ()))
+        if len(options) > 1 and avoid_cache_key:
+            alternatives = [
+                option for option in options if option.cache_key != avoid_cache_key
+            ]
+            if alternatives:
+                options = alternatives
+        if not options:
+            return None
+        weights = [max(0.001, float(option.weight)) for option in options]
+        return rng.choices(options, weights=weights, k=1)[0]
 
     def _reload_if_changed(self) -> None:
         try:
@@ -241,7 +290,7 @@ class TrackAnnouncementAssetLibrary:
             or payload.get("live_web_requests") is not False
         ):
             raise ValueError("invalid track announcement manifest")
-        ready: dict[int, ReadyAnnouncement] = {}
+        ready: dict[int, list[ReadyAnnouncement]] = {}
         queued = 0
         for entry in payload.get("entries", []):
             if entry.get("state") != "ready":
@@ -267,16 +316,26 @@ class TrackAnnouncementAssetLibrary:
             if channels != 1 or not 0.25 <= duration <= 30:
                 continue
             fact = entry.get("fact")
-            ready[int(entry["track_id"])] = ReadyAnnouncement(
-                path=candidate,
-                duration_seconds=duration,
-                text=text,
-                fact_source_url=(
-                    str(fact.get("source_url"))
-                    if isinstance(fact, dict) and fact.get("source_url")
-                    else None
-                ),
+            ready.setdefault(int(entry["track_id"]), []).append(
+                ReadyAnnouncement(
+                    path=candidate,
+                    duration_seconds=duration,
+                    text=text,
+                    fact_source_url=(
+                        str(fact.get("source_url"))
+                        if isinstance(fact, dict) and fact.get("source_url")
+                        else None
+                    ),
+                    cache_key=expected_key,
+                    variant_id=int(entry.get("variant_id") or 0),
+                    weight=max(0.001, float(entry.get("weight") or 1.0)),
+                )
             )
-        self._ready = ready
+        self._ready = {
+            track_id: tuple(
+                sorted(options, key=lambda option: (option.variant_id, option.cache_key))
+            )
+            for track_id, options in ready.items()
+        }
         self.queued_count = queued
         self._manifest_mtime_ns = mtime_ns

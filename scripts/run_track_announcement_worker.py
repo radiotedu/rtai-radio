@@ -6,8 +6,10 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import wave
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -66,6 +68,22 @@ def read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def identity(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.casefold()).split())
+
+
+def live_priority(station_id: str) -> dict[tuple[str, str], int]:
+    status = read_json(STATION_RUNTIME / station_id / "status.json")
+    ordered = [status.get("now_playing") or {}, *list(status.get("next") or [])]
+    return {
+        (identity(item.get("title")), identity(item.get("artist"))): index
+        for index, item in enumerate(ordered)
+        if identity(item.get("title"))
+    }
 
 
 def atomic_json(path: Path, payload: dict) -> None:
@@ -158,7 +176,9 @@ def next_queued_entry(
             or manifest.get("live_web_requests") is not False
         ):
             continue
-        for entry in manifest.get("entries", []):
+        candidates: list[tuple[int, int, dict]] = []
+        priority = live_priority(station_id)
+        for manifest_index, entry in enumerate(manifest.get("entries", [])):
             if entry.get("state") != "queued":
                 continue
             if str(entry.get("cache_key") or "") in deferred_keys:
@@ -171,6 +191,13 @@ def next_queued_entry(
                 continue
             if target.name != f"{entry.get('cache_key')}.wav":
                 continue
+            rank = priority.get(
+                (identity(entry.get("title")), identity(entry.get("artist"))),
+                100_000,
+            )
+            candidates.append((rank, manifest_index, entry))
+        if candidates:
+            _, _, entry = min(candidates, key=lambda item: (item[0], item[1]))
             return (index, station_id, entry)
     return None
 

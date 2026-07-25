@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -264,8 +265,13 @@ class Rotation:
         qwen: list[Item],
         announcements: TrackAnnouncementAssetLibrary,
         seed: int,
+        entropy: int = 0,
     ) -> None:
-        self.random = random.Random(seed)
+        combined_seed = int(seed) ^ int(entropy)
+        self.random = random.Random(combined_seed)
+        self.session_seed_fingerprint = hashlib.sha256(
+            str(combined_seed).encode("ascii")
+        ).hexdigest()[:12]
         self.tracks = list(tracks)
         self.imaging = list(imaging)
         self.qwen = list(qwen)
@@ -276,6 +282,7 @@ class Rotation:
         self.planned_track_number = 0
         self.tracks_without_voice = 0
         self.last_fallback_use: dict[str, int] = {}
+        self.last_specific_variant: dict[int, str] = {}
         self.last_track_id: int | None = None
         self.specific_pool_ids: frozenset[int] = frozenset()
         self.specific_cycle: list[Item] = []
@@ -403,10 +410,22 @@ class Rotation:
         for _ in range(count):
             track = self._next_track()
             self.planned_track_number += 1
-            prepared = self.announcements.resolve(track.track_id)
+            prepared = self.announcements.choose(
+                track.track_id,
+                self.random,
+                avoid_cache_key=(
+                    self.last_specific_variant.get(int(track.track_id))
+                    if track.track_id is not None
+                    else None
+                ),
+            )
             qwen = None if prepared else self._choose_fallback_qwen()
             if prepared:
                 self.tracks_without_voice = 0
+                if track.track_id is not None:
+                    self.last_specific_variant[int(track.track_id)] = (
+                        prepared.cache_key or prepared.path.name
+                    )
             voice = prepared or qwen
             self.pending.append(
                 Item(
@@ -525,6 +544,7 @@ class TemporaryStation:
             self.qwen,
             self.announcements,
             int(self.definition["seed"]),
+            entropy=secrets.randbits(64),
         )
 
     def start_encoder(self) -> None:
@@ -652,10 +672,18 @@ class TemporaryStation:
                 },
                 "unique_qwen_assets": len(self.qwen) + self.announcements.ready_count,
                 "runtime_generation_required": self.announcements.queued_count > 0,
-                "verified_track_intros_ready": self.announcements.ready_count,
+                "verified_track_intros_ready": self.announcements.ready_track_count,
+                "verified_track_intro_variants_ready": self.announcements.ready_count,
                 "verified_track_intros_queued": self.announcements.queued_count,
+                "multi_variant_tracks_ready": (
+                    self.announcements.multi_variant_track_count
+                ),
                 "track_specific_rotation_pool": len(self.rotation.specific_pool_ids),
                 "track_specific_rotation_required": MIN_TRACK_SPECIFIC_ROTATION_POOL,
+                "music_selection_mode": "fresh_entropy_random_without_replacement",
+                "announcement_selection_mode": "weighted_random_per_play",
+                "announcement_variant_anti_repeat": True,
+                "session_seed_fingerprint": self.rotation.session_seed_fingerprint,
             },
             "session_stats": {
                 **{key: round(float(value), 1) for key, value in self.counters.items()},
