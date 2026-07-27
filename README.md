@@ -20,12 +20,6 @@
   <a href="docs/NEXT_TODOS.md">Roadmap</a>
 </p>
 
-<p align="center">
-  <strong>Project owners:</strong>
-  <a href="https://github.com/akgularda">akgularda</a> and
-  <a href="https://github.com/radiotedu">RadioTEDU</a>
-</p>
-
 RTAI Radio is the core RadioTEDU broadcast platform. English (`radiotedu-en`)
 and French (`radiotedu-fr`) run as isolated station processes; each owns its own
 autonomous orchestrator, database, rundown, queues, fallback playlist,
