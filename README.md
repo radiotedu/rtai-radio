@@ -68,8 +68,8 @@ For the next implementation backlog, see
 ## Quickstart
 
 ```bash
-git clone https://github.com/radiotedu/radiotedu-ai.git
-cd radiotedu-ai
+git clone https://github.com/radiotedu/rtai-radio.git
+cd rtai-radio
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

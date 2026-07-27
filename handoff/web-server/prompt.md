@@ -6,9 +6,9 @@ You are Codex running on the authorized RadioTEDU Windows/IIS website server. Th
 
 Clone the public repository and check out the exact release tag below. Do not deploy another branch, a moving default branch, or an unverified local copy.
 
-- Repository: `https://github.com/radiotedu/radiotedu-ai.git`
+- Repository: `https://github.com/radiotedu/rtai-radio.git`
 - Web release tag: `v1.0.4`
-- Release page: `https://github.com/radiotedu/radiotedu-ai/releases/tag/v1.0.4`
+- Release page: `https://github.com/radiotedu/rtai-radio/releases/tag/v1.0.4`
 
 The release contains the website source, supplied brand assets, six program covers, the website-only API, broadcast-connection contract, verification scripts and locked dependencies. It contains no music library, jingles, voice assets or credentials. Apply exactly one product delta after checkout: remove listener counting and listener-session tracking as specified below. Record that server-side patch in the deployment report. Make no other redesign.
 
@@ -107,7 +107,7 @@ This is not remote control and not an inbound connection to the broadcast comput
 
 ## Execute
 
-1. Clone `https://github.com/radiotedu/radiotedu-ai.git` into a new versioned server directory, fetch tags, check out detached tag `v1.0.4`, and record the resolved commit SHA. Verify every file listed in `MANIFEST.json` before continuing. Do not deploy the default branch or discard server-owned data.
+1. Clone `https://github.com/radiotedu/rtai-radio.git` into a new versioned server directory, fetch tags, check out detached tag `v1.0.4`, and record the resolved commit SHA. Verify every file listed in `MANIFEST.json` before continuing. Do not deploy the default branch or discard server-owned data.
 2. Back up the current IIS configuration and current `/ai` WordPress mapping/content in a recoverable, timestamped server-only location. Record exact rollback commands without exposing secrets.
 3. Confirm these required files exist: `backend/public_app.py`, `backend/platform_api.py`, `frontend/src/components/PublicDashboard.tsx`, `frontend/public/brand`, `frontend/public/programs`, `scripts/smoke_public_server.py`.
 4. Create an isolated Python environment, install `packaging/web/requirements-web.lock.txt`, run `npm ci`, and run `npm run build`. Confirm `dist/frontend/brand` and all six `dist/frontend/programs/*.png` files exist.
