@@ -1,21 +1,79 @@
-# RadioTEDU
+<p align="center">
+  <img src="frontend/public/brand/rtai-logo.png" width="360" alt="RTAI logo">
+</p>
 
-RadioTEDU is a local-first dual-station AI radio system. English (`radiotedu-en`) and French (`radiotedu-fr`) run as isolated station processes; each owns its own autonomous orchestrator, database, rundown, queues, fallback playlist, Liquidsoap process, health, metadata, and logs. One top-level supervisor and one process-level `PublicSyncService` coordinate lifecycle and public status without controlling music selection.
+<p align="center">
+  <img src="frontend/public/brand/radiotedu-station.png" width="180" alt="RadioTEDU station artwork">
+</p>
+
+<h1 align="center">RTAI Radio</h1>
+
+<p align="center">
+  A local-first bilingual radio platform for autonomous programming, resilient
+  playout, listener publishing, and broadcast operations.
+</p>
+
+<p align="center">
+  <a href="https://radiotedu.com/ai">Listen</a> ·
+  <a href="docs/BROADCAST_COMPUTER_RUNBOOK.md">Broadcast runbook</a> ·
+  <a href="docs/WEBSITE_SERVER_RUNBOOK.md">Website runbook</a> ·
+  <a href="docs/NEXT_TODOS.md">Roadmap</a>
+</p>
+
+<p align="center">
+  <strong>Project owners:</strong>
+  <a href="https://github.com/akgularda">akgularda</a> and
+  <a href="https://github.com/radiotedu">RadioTEDU</a>
+</p>
+
+RTAI Radio is the core RadioTEDU broadcast platform. English (`radiotedu-en`)
+and French (`radiotedu-fr`) run as isolated station processes; each owns its own
+autonomous orchestrator, database, rundown, queues, fallback playlist,
+Liquidsoap process, health, metadata, and logs. One top-level supervisor and one
+process-level `PublicSyncService` coordinate lifecycle and public status without
+controlling music selection.
 
 The listener website is `https://radiotedu.com/ai`. The current release-pinned browser audio URLs are English `https://stream.radiotedu.com/ai` and French `https://stream.radiotedu.com/event`. The durable station contract still documents canonical `/en` and `/fr` identities for signed-status compatibility; do not substitute those for the current browser mapping without an explicit migration.
 
 There is no demo mode and no invented listening data. Add your own local music before starting playback. If no playable music exists, the backend and dashboard still run, the station stays idle, and the dashboard asks you to add music and rescan.
 
-For the next implementation backlog, see [`docs/NEXT_TODOS.md`](docs/NEXT_TODOS.md).
+For the next implementation backlog, see
+[`docs/NEXT_TODOS.md`](docs/NEXT_TODOS.md).
+
+## At a glance
+
+| Area | What this repository provides |
+| --- | --- |
+| Stations | Independent English and French runtimes with durable rundowns and fallbacks |
+| Intelligence | Local Ollama planning plus optional local Qwen TTS announcements |
+| Playout | Liquidsoap and Icecast integration with supervised lifecycle management |
+| Listener experience | Public React website, live metadata, artwork, and stream status |
+| Operations | Windows service packaging, health dashboard, handoff guides, and smoke tests |
+
+## Repository guide
+
+- **Start here:** [Quickstart](#quickstart), [music library](#current-music-library),
+  and [local AI](#local-ai)
+- **Programming:** [live playout](#probabilistic-live-playout),
+  [orchestrator](#autonomous-orchestrator), [programs](#programs), and
+  [playback](#playback)
+- **Services:** [TTS](#tts), [search](#search), [weather](#weather), and
+  [curated RSS news](#curated-rss-news)
+- **Broadcast stack:** [Liquidsoap and Icecast](#liquidsoap-and-icecast),
+  [cover art](#cover-art), and [observability](#observability)
+- **Deployment:** [builder handoff](#builder-handoff) and the
+  [broadcast](docs/BROADCAST_COMPUTER_RUNBOOK.md) and
+  [website](docs/WEBSITE_SERVER_RUNBOOK.md) runbooks
 
 ## Quickstart
 
 ```bash
-cd RadioTEDU
+git clone https://github.com/radiotedu/rtai-radio.git
+cd rtai-radio
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-npm install
+npm ci
 mkdir -p data/music
 python scripts/scan_music.py
 python -m backend.app
