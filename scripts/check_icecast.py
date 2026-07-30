@@ -45,7 +45,7 @@ def main() -> int:
     if args.url:
         results = [check_icecast(args.url)]
     else:
-        mounts = args.mount or ["/en", "/fr"]
+        mounts = args.mount or ["/ai", "/event"]
         normalized = [mount if mount.startswith("/") else f"/{mount}" for mount in mounts]
         results = [check_icecast(f"http://{args.host}:{args.port}{mount}") for mount in normalized]
     print(json.dumps({"host": args.host, "port": args.port, "mounts": results}, ensure_ascii=True))

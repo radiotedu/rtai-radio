@@ -40,7 +40,7 @@ def _settings() -> Settings:
 
 def _snapshot_state(station_id: str, title: str) -> dict:
     language = "en" if station_id.endswith("-en") else "fr"
-    mount = "/en" if language == "en" else "/fr"
+    mount = "/ai" if language == "en" else "/event"
     return {
         "operational_state": "live",
         "speech_state": {"active": False, "kind": "music"},
@@ -240,7 +240,7 @@ def test_operator_status_adapter_exposes_only_sanitized_editorial_state() -> Non
     assert state["speech_state"] == {"active": False, "kind": "music"}
     assert state["current_program"]["sound_tags"] == ["warm", "focused"]
     assert state["next_program"]["sound_tags"] == ["calm"]
-    assert state["stream"]["url"] == "https://stream.radiotedu.com/en"
+    assert state["stream"]["url"] == "https://stream.radiotedu.com/ai"
     for private in ("C:/", "private_path", "file_path", "command_path", "ADMIN_AUTH", "host_name"):
         assert private not in rendered
 

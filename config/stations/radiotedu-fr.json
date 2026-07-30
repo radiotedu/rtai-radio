@@ -10,10 +10,10 @@
     "compatibility_routes": [],
     "snapshot_endpoint": "/v1/radio/stations/radiotedu-fr/snapshot",
     "status_endpoint": "/v1/radio/stations/radiotedu-fr/status",
-    "stream_url": "https://stream.radiotedu.com/fr"
+    "stream_url": "https://stream.radiotedu.com/event"
   },
   "audio": {
-    "stream_mount": "/fr",
+    "stream_mount": "/event",
     "loudness_lufs": -16,
     "true_peak_dbtp": -1,
     "minimum_qwen_buffer": 5,

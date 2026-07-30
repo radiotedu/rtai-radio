@@ -61,7 +61,7 @@ output.icecast(
   port=11154,
   user="source",
   password=source_password,
-  mount="/en",
+  mount="/ai",
   public=true,
   name="RadioTEDU",
   description="RadioTEDU AI radio",

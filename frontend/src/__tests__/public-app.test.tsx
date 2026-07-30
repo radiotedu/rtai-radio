@@ -21,7 +21,7 @@ const postSession = vi.mocked(postStationPublicSession);
 
 function statusFor(stationId: StationId): StationPublicStatusResponse {
   const language = stationId === 'radiotedu-en' ? 'en' : 'fr';
-  const mount = language === 'en' ? '/en' : '/fr';
+  const mount = language === 'en' ? '/ai' : '/event';
   return {
     protocol: 'radiotedu-platform/v1',
     station_id: stationId,

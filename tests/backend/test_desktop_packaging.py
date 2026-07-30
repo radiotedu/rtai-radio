@@ -107,8 +107,8 @@ def test_two_machine_runbooks_and_smoke_scripts_exist() -> None:
         "Research is limited to jazz and classical",
         "https://api.radiotedu.com",
         "10.98.98.75:11154",
-        "`/en`",
-        "`/fr`",
+        "`/ai`",
+        "`/event`",
         "aac_192",
         "RADIOTEDU_EN_SNAPSHOT_SECRET",
         "RADIOTEDU_FR_SNAPSHOT_SECRET",
@@ -153,7 +153,7 @@ def test_required_local_streaming_and_sync_helpers_exist() -> None:
     assert "liquidsoap" in liquidsoap_runner.lower()
     assert "10.98.98.75" in icecast_checker
     assert "11154" in icecast_checker
-    assert '"/en", "/fr"' in icecast_checker
+    assert '"/ai", "/event"' in icecast_checker
     assert "urllib.request" in icecast_checker
     assert "sign_platform_headers" in public_sync
     assert "idempotency_key" in public_sync
@@ -200,8 +200,8 @@ def test_exactly_two_target_machine_codex_prompts_are_packaged() -> None:
     for required in (
         "This computer is not the builder computer",
         "10.98.98.75:11154",
-        "https://stream.radiotedu.com/en",
-        "https://stream.radiotedu.com/fr",
+        "https://stream.radiotedu.com/ai",
+        "https://stream.radiotedu.com/event",
         "https://api.radiotedu.com",
         "staging",
     ):
@@ -249,8 +249,8 @@ def test_web_prompt_remains_status_only_and_two_prompts_are_canonical() -> None:
     for prompt in (web_prompt, broadcast_prompt):
         assert "https://radiotedu.com/ai" in prompt
         assert "icecast-only" in prompt
-        assert "https://stream.radiotedu.com/en" in prompt
-        assert "https://stream.radiotedu.com/fr" in prompt
+        assert "https://stream.radiotedu.com/ai" in prompt
+        assert "https://stream.radiotedu.com/event" in prompt
         assert "do not create `/ai/en` or `/ai/fr`" in prompt
 
     assert "single listener page" in web_prompt

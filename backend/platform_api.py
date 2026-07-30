@@ -20,10 +20,10 @@ from .database import connect, init_db, now_iso
 PROTOCOL = "radiotedu-platform/v1"
 STATIONS = frozenset({"radiotedu-en", "radiotedu-fr"})
 LANGUAGES = {"radiotedu-en": "en", "radiotedu-fr": "fr"}
-MOUNTS = {"radiotedu-en": "/en", "radiotedu-fr": "/fr"}
+MOUNTS = {"radiotedu-en": "/ai", "radiotedu-fr": "/event"}
 STREAM_URLS = {
-    "radiotedu-en": "https://stream.radiotedu.com/en",
-    "radiotedu-fr": "https://stream.radiotedu.com/fr",
+    "radiotedu-en": "https://stream.radiotedu.com/ai",
+    "radiotedu-fr": "https://stream.radiotedu.com/event",
 }
 SOUND_TAGS = frozenset({"warm", "bright", "calm", "focused", "energetic"})
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -69,7 +69,7 @@ class PublicProgram(StrictModel):
 
 class PublicStream(StrictModel):
     url: str = Field(min_length=1, max_length=256)
-    mount: Literal["/en", "/fr"]
+    mount: Literal["/ai", "/event"]
     status: Literal["live", "degraded", "offline", "unknown"]
     codec: Literal["AAC-LC"]
     bitrate_kbps: Literal[192]

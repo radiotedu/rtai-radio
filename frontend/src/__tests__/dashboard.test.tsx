@@ -698,7 +698,7 @@ const stationPublicStatus: StationPublicStatusResponse = {
     next_program: { id: 'tedu-dawn', name: 'TEDU Dawn', vibe: 'Bright start', sound_tags: ['bright'] },
     stream: {
       url: 'https://stream.radiotedu.com/ai',
-      mount: '/en',
+          mount: '/ai',
       status: 'live',
       codec: 'AAC-LC',
       bitrate_kbps: 192,
@@ -750,7 +750,7 @@ describe('PublicDashboard', () => {
       snapshot: {
         ...stationPublicStatus.snapshot!,
         station: { id: 'radiotedu-fr', language: 'fr', display_name: 'RadioTEDU Français' },
-        stream: { ...stationPublicStatus.snapshot!.stream, url: 'https://stream.radiotedu.com/event', mount: '/fr' },
+      stream: { ...stationPublicStatus.snapshot!.stream, url: 'https://stream.radiotedu.com/event', mount: '/event' },
       },
     };
 

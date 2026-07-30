@@ -39,7 +39,7 @@ from scripts.run_station_forever import (
 
 
 EXPECTED_STATIONS = ("radiotedu-en", "radiotedu-fr")
-EXPECTED_MOUNTS = {"radiotedu-en": "/en", "radiotedu-fr": "/fr"}
+EXPECTED_MOUNTS = {"radiotedu-en": "/ai", "radiotedu-fr": "/event"}
 SOURCE_SECRET_NAMES = {
     "radiotedu-en": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
     "radiotedu-fr": "RADIOTEDU_FR_SOURCE_CREDENTIALS",

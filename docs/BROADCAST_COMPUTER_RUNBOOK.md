@@ -14,10 +14,10 @@ This runbook applies only to the broadcasting computer. The builder machine does
 
 | Station | Mount | Public player |
 | --- | --- | --- |
-| `radiotedu-en` | `/en` | `https://stream.radiotedu.com/en` |
-| `radiotedu-fr` | `/fr` | `https://stream.radiotedu.com/fr` |
+| `radiotedu-en` | `/ai` | `https://stream.radiotedu.com/ai` |
+| `radiotedu-fr` | `/event` | `https://stream.radiotedu.com/event` |
 
-`https://stream.radiotedu.com` is Icecast-only and exposes the `/en` and `/fr` audio mounts; it does not host HTML, the listener UI, or an API. The single listener page is `https://radiotedu.com/ai`, hosted by the website computer with an in-page EN/FR station selector. Do not create `/ai/en` or `/ai/fr`.
+`https://stream.radiotedu.com` is Icecast-only and exposes the `/ai` and `/event` audio mounts; it does not host HTML, the listener UI, or an API. The single listener page is `https://radiotedu.com/ai`, hosted by the website computer with an in-page EN/FR station selector. Do not create `/ai/en` or `/ai/fr`.
 
 Both use source username `source`, profile `aac_192`, AAC-LC 192 kbps, and `public=true`. The official native Windows Liquidsoap build must support FFmpeg and render `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))`. Missing FFmpeg support is a hard preflight failure.
 

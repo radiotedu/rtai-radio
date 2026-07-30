@@ -142,8 +142,8 @@ def test_station_liquidsoap_templates_keep_en_and_fr_runtime_artifacts_isolated(
     en = render_liquidsoap_config(station_context(tmp_path, "radiotedu-en").settings)
     fr = render_liquidsoap_config(station_context(tmp_path, "radiotedu-fr").settings)
 
-    assert en["mount"] == "/en"
-    assert fr["mount"] == "/fr"
+    assert en["mount"] == "/ai"
+    assert fr["mount"] == "/event"
     assert en["credentials_environment"] == "RADIOTEDU_EN_SOURCE_CREDENTIALS"
     assert fr["credentials_environment"] == "RADIOTEDU_FR_SOURCE_CREDENTIALS"
     assert en["source_ids"] == {

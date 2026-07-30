@@ -17,11 +17,11 @@ from .fallback_playlist import FallbackPlaylistBuilder
 
 _STATION_LIQUIDSOAP = {
     "radiotedu-en": {
-        "mount": "/en",
+        "mount": "/ai",
         "credentials_environment": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
     },
     "radiotedu-fr": {
-        "mount": "/fr",
+        "mount": "/event",
         "credentials_environment": "RADIOTEDU_FR_SOURCE_CREDENTIALS",
     },
 }

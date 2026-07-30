@@ -14,12 +14,12 @@ Stop after staging and conformance verification. Stop before production: do not 
 - Languages: English (`en`), French (`fr`)
 - Icecast source: `10.98.98.75:11154`
 - Source username: `source`
-- Mounts: `/en`, `/fr`
+- Mounts: `/ai`, `/event`
 - Encoder: `aac_192`, AAC-LC 192 kbps
 - Liquidsoap encoder: `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))`
 - Directory listing: `public=true`
-- Public streams: `https://stream.radiotedu.com/en`, `https://stream.radiotedu.com/fr`
-- Icecast-only origin: `https://stream.radiotedu.com`, exposing only the public audio mounts `/en` and `/fr`; it does not host the listener UI or API.
+- Public streams: `https://stream.radiotedu.com/ai`, `https://stream.radiotedu.com/event`
+- Icecast-only origin: `https://stream.radiotedu.com`, exposing only the public audio mounts `/ai` and `/event`; it does not host the listener UI or API.
 - Platform API: `https://api.radiotedu.com`
 - Service identity: `school-radio-pc`
 - Scope: `agent:playout`
@@ -102,7 +102,7 @@ python scripts/check_icecast.py
 
 Before accepting staging, also prove:
 
-- exact `/en` and `/fr` configs use AAC-LC 192 kbps, `source`, and `public=true`;
+- exact `/ai` and `/event` configs use AAC-LC 192 kbps, `source`, and `public=true`;
 - EN and FR child environments do not contain the other station's source credential and contain no HMAC secrets;
 - station-local orchestrators start independently and one child can be restarted without stopping the other;
 - each station refills its rundown only below two hours and keeps a one-track cushion at exact planned/rendered thresholds;

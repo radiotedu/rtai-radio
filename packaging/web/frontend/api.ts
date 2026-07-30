@@ -39,7 +39,7 @@ export interface StationPublicSnapshot {
   next_program: StationPublicProgram | null;
   stream: {
     url: string;
-    mount: '/en' | '/fr';
+    mount: '/ai' | '/event';
     status: 'live' | 'degraded' | 'offline' | 'unknown';
     codec: 'AAC-LC';
     bitrate_kbps: 192;

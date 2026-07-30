@@ -20,7 +20,7 @@ Create and deploy the transferred RadioTEDU web package as the live public AI-ra
 - English audio, temporary mount: `https://stream.radiotedu.com/ai`
 - French audio, temporary mount: `https://stream.radiotedu.com/event`
 - Icecast-only audio origin: `https://stream.radiotedu.com`; it exposes the public audio mounts and never hosts the listener UI or metadata API.
-- Protocol-canonical station identities remain `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr` for signed-status compatibility only; the browser release remains pinned to `/ai` and `/event`.
+- Public station streams are `https://stream.radiotedu.com/ai` and `https://stream.radiotedu.com/event`; obsolete `/en` and `/fr` mounts must not be published.
 
 The Icecast-only origin must not serve HTML, API, or application routes.
 - Canonical status/write API: `https://api.radiotedu.com/v1/radio/...`
@@ -82,7 +82,7 @@ Fixed signed-status contract:
 
 - station IDs: `radiotedu-en`, `radiotedu-fr`
 - display languages: `en`, `fr`
-- signed station stream identifiers remain `/en`, `/fr` with AAC-LC 192 kbps for compatibility with the broadcast status protocol already implemented in this release;
+- signed station stream identifiers are `/ai`, `/event` with AAC-LC 192 kbps;
 - temporary browser audio mapping for this website release is English `/ai` and French `/event`, both currently MP3 192 kbps;
 - broadcast identity: `school-radio-pc`
 - allowed scope: `agent:playout`
@@ -139,7 +139,7 @@ Then verify from the public side:
 
 - `/ai` returns the built listener page; `/ai/en`, `/ai/fr`, `/Radio`, `/radio`, and `/rock` are not application routes;
 - the visible EN/FR buttons switch station data without changing `window.location.pathname` away from `/ai`;
-- EN audio source is exactly `https://stream.radiotedu.com/ai`, FR exactly `https://stream.radiotedu.com/event`, even when an older status snapshot contains `/en` or `/fr`;
+- EN audio source is exactly `https://stream.radiotedu.com/ai`, FR exactly `https://stream.radiotedu.com/event`; older snapshots containing `/en` or `/fr` are obsolete;
 - `/brand/radiotedu-logo-white.png`, `/brand/rtai-logo.png`, and all six `/programs/*.png` assets return 200 with correct MIME types;
 - desktop and narrow-mobile layouts render without overflow, obscured controls or unreadable logo treatment;
 - the first viewport preserves the RadioTEDU AI masthead and shows the live player and now-playing identity without scrolling at 1440×900 and 390×844;

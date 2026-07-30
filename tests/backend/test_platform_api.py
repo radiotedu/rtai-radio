@@ -38,7 +38,7 @@ def _client(settings: Settings) -> TestClient:
 
 def _snapshot(station_id: str = "radiotedu-en", sequence: int = 1) -> dict:
     language = "en" if station_id.endswith("-en") else "fr"
-    mount = "/en" if language == "en" else "/fr"
+    mount = "/ai" if language == "en" else "/event"
     return {
         "protocol": "radiotedu-platform/v1",
         "schema_version": 2,
@@ -155,7 +155,7 @@ def test_valid_hmac_snapshot_is_stored_and_returned_by_station_status(tmp_path: 
     assert stored.json()["correlation_id"]
     assert status.status_code == 200
     assert status.json()["snapshot"]["now_playing"]["title"] == "Blue Campus"
-    assert status.json()["snapshot"]["stream"]["url"] == "https://stream.radiotedu.com/en"
+    assert status.json()["snapshot"]["stream"]["url"] == "https://stream.radiotedu.com/ai"
 
 
 def test_mutual_handshake_authenticates_broadcast_agent_and_website(tmp_path: Path) -> None:

@@ -21,11 +21,11 @@
       "announcement_root": "data/stations/radiotedu-en/announcements",
       "cache_root": "data/stations/radiotedu-en/qwen-cache",
       "log_root": "data/stations/radiotedu-en/logs",
-      "mount": "/en",
+      "mount": "/ai",
       "source_credentials_ref": "RADIOTEDU_EN_SOURCE_CREDENTIALS",
       "snapshot_secret_ref": "RADIOTEDU_EN_SNAPSHOT_SECRET",
-      "public_listener_endpoint": "https://stream.radiotedu.com/en",
-      "source_endpoint": "http://10.98.98.75:11154/en"
+      "public_listener_endpoint": "https://stream.radiotedu.com/ai",
+      "source_endpoint": "http://10.98.98.75:11154/ai"
     },
     "radiotedu-fr": {
       "station_id": "radiotedu-fr",
@@ -37,11 +37,11 @@
       "announcement_root": "data/stations/radiotedu-fr/announcements",
       "cache_root": "data/stations/radiotedu-fr/qwen-cache",
       "log_root": "data/stations/radiotedu-fr/logs",
-      "mount": "/fr",
+      "mount": "/event",
       "source_credentials_ref": "RADIOTEDU_FR_SOURCE_CREDENTIALS",
       "snapshot_secret_ref": "RADIOTEDU_FR_SNAPSHOT_SECRET",
-      "public_listener_endpoint": "https://stream.radiotedu.com/fr",
-      "source_endpoint": "http://10.98.98.75:11154/fr"
+      "public_listener_endpoint": "https://stream.radiotedu.com/event",
+      "source_endpoint": "http://10.98.98.75:11154/event"
     }
   },
   "services": {

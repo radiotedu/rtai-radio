@@ -31,9 +31,9 @@ def make_profile(station_id: str = "radiotedu-en") -> StationProfile:
             compatibility_routes=(),
             snapshot_endpoint=f"/v1/radio/stations/{station_id}/snapshot",
             status_endpoint=f"/v1/radio/stations/{station_id}/status",
-            stream_url="https://stream.radiotedu.com/en",
+        stream_url="https://stream.radiotedu.com/ai",
         ),
-        audio=AudioProfile("/en", -16, -1, 5),
+        audio=AudioProfile("/ai", -16, -1, 5),
         runtime=RuntimeProfile(
             f"data/stations/{station_id}",
             f"data/stations/{station_id}/radio.db",
@@ -67,7 +67,7 @@ def test_context_derives_station_scoped_settings() -> None:
     assert context.settings.database_path.endswith("data/stations/radiotedu-fr/radio.db")
     assert context.settings.liquidsoap_host == "10.98.98.75"
     assert context.settings.liquidsoap_port == 11154
-    assert context.settings.liquidsoap_mount == "/fr"
+    assert context.settings.liquidsoap_mount == "/event"
     assert context.settings.liquidsoap_icecast_user == "source"
     assert context.settings.liquidsoap_encoder_profile == "aac_192"
     assert context.settings.liquidsoap_public is True
@@ -394,10 +394,10 @@ def test_canonical_profiles_have_frozen_identity() -> None:
             compatibility_routes=(),
             snapshot_endpoint="/v1/radio/stations/radiotedu-en/snapshot",
             status_endpoint="/v1/radio/stations/radiotedu-en/status",
-            stream_url="https://stream.radiotedu.com/en",
+        stream_url="https://stream.radiotedu.com/ai",
         ),
         audio=AudioProfile(
-            "/en",
+            "/ai",
             -16,
             -1,
             5,
@@ -430,10 +430,10 @@ def test_canonical_profiles_have_frozen_identity() -> None:
             compatibility_routes=(),
             snapshot_endpoint="/v1/radio/stations/radiotedu-fr/snapshot",
             status_endpoint="/v1/radio/stations/radiotedu-fr/status",
-            stream_url="https://stream.radiotedu.com/fr",
+        stream_url="https://stream.radiotedu.com/event",
         ),
         audio=AudioProfile(
-            "/fr",
+            "/event",
             -16,
             -1,
             5,

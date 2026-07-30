@@ -83,10 +83,10 @@ def _english_compatibility_profile(settings: Settings) -> StationProfile:
             (),
             "/v1/radio/stations/radiotedu-en/snapshot",
             "/v1/radio/stations/radiotedu-en/status",
-            settings.public_stream_url or "https://stream.radiotedu.com/en",
+            settings.public_stream_url or "https://stream.radiotedu.com/ai",
         ),
         AudioProfile(
-            "/en",
+            "/ai",
             -16,
             -1,
             max(5, settings.min_ready_announcements),

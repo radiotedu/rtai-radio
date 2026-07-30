@@ -197,7 +197,12 @@ def test_operator_observability_reports_station_duration_coverage(tmp_path: Path
     assert 0 <= coverage.rendered_seconds - reported["rendered_seconds"] <= 1
     assert reported["fallback_seconds"] == coverage.fallback_seconds
     assert reported["needs_refill"] == coverage.needs_refill
-    assert reported["air_ready"] == coverage.air_ready
+    policy = agent.rundown_planner.policy
+    assert reported["air_ready"] == (
+        reported["planned_seconds"] >= policy.planned_seconds
+        and reported["rendered_seconds"] >= policy.rendered_seconds
+        and reported["fallback_seconds"] >= policy.fallback_seconds
+    )
 
 
 def test_orchestrator_maintains_one_render_item_then_plays_ready_rundown(

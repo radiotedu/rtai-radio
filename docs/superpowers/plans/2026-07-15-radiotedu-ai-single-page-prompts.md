@@ -156,7 +156,7 @@ Run:
 
 ```powershell
 git diff --stat
-rg -n "1234Qwer" handoff docs tests/backend/test_desktop_packaging.py
+rg -n "<icecast-source-password>" handoff docs tests/backend/test_desktop_packaging.py
 ```
 
 Expected: only planned files are changed and the credential scan returns no matches.

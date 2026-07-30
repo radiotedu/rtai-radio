@@ -8,10 +8,10 @@ The website is status-only with no control surface. It accepts and renders sanit
 
 - `https://radiotedu.com/ai` — the single listener page, with a visible and keyboard-accessible in-page EN/FR station selector
 - Do not create `/ai/en` or `/ai/fr` listener pages.
-- `https://stream.radiotedu.com/en` and `https://stream.radiotedu.com/fr` — Icecast audio mounts only
+- `https://stream.radiotedu.com/ai` and `https://stream.radiotedu.com/event` — Icecast audio mounts only
 - `https://api.radiotedu.com` — canonical platform API
 
-`https://stream.radiotedu.com` is an Icecast-only origin. It forwards `/en` and `/fr` to the corresponding private mounts at `10.98.98.75:11154`; it must not serve HTML, API, application routes, or Icecast admin/source interfaces.
+`https://stream.radiotedu.com` is an Icecast-only origin. It forwards `/ai` and `/event` to the corresponding private mounts at `10.98.98.75:11154`; it must not serve HTML, API, application routes, or Icecast admin/source interfaces.
 
 Use `RadioTEDU` as the visual brand. `Radio TED U` is a speech-only instruction for the broadcasting computer and is not the website wordmark.
 
@@ -49,6 +49,6 @@ python -m backend.public_app
 python scripts/smoke_public_server.py --base-url http://127.0.0.1:<staging-port> --strict --json
 ```
 
-Verify `https://radiotedu.com/ai`, its in-page EN/FR station selector, localized labels, keyboard focus, responsive layout, fresh/stale/no-data behavior, last-valid-snapshot preservation, station session isolation, and HTTPS AAC browser playback from the `/en` and `/fr` Icecast mounts. Confirm `/ai/en` and `/ai/fr` are not listener pages. Inspect public OpenAPI for forbidden capabilities.
+Verify `https://radiotedu.com/ai`, its in-page EN/FR station selector, localized labels, keyboard focus, responsive layout, fresh/stale/no-data behavior, last-valid-snapshot preservation, station session isolation, and HTTPS AAC browser playback from the `/ai` and `/event` Icecast mounts. Confirm `/ai/en` and `/ai/fr` are not listener pages. Inspect public OpenAPI for forbidden capabilities.
 
 Store HMAC verification secrets only in the website secret manager. This server must never receive the Icecast source password. Record the staged SHA from the builder-published `feature/dual-station-radiotedu` revision, proxy/TLS config, rollback SHA, and redacted conformance results. Stop after staging; do not switch production traffic without explicit authorization.

@@ -27,7 +27,7 @@ Liquidsoap process, health, metadata, and logs. One top-level supervisor and one
 process-level `PublicSyncService` coordinate lifecycle and public status without
 controlling music selection.
 
-The listener website is `https://radiotedu.com/ai`. The current release-pinned browser audio URLs are English `https://stream.radiotedu.com/ai` and French `https://stream.radiotedu.com/event`. The durable station contract still documents canonical `/en` and `/fr` identities for signed-status compatibility; do not substitute those for the current browser mapping without an explicit migration.
+The listener website is `https://radiotedu.com/ai`. The current public audio URLs are English `https://stream.radiotedu.com/ai` and French `https://stream.radiotedu.com/event`; the obsolete `/en` and `/fr` Icecast mounts are not used.
 
 There is no demo mode and no invented listening data. Add your own local music before starting playback. If no playable music exists, the backend and dashboard still run, the station stays idle, and the dashboard asks you to add music and rescan.
 
@@ -361,7 +361,7 @@ RADIOTEDU_EN_SOURCE_CREDENTIALS=<protected-secret-reference>
 RADIOTEDU_FR_SOURCE_CREDENTIALS=<protected-secret-reference>
 ```
 
-English uses `/en` and `https://stream.radiotedu.com/en`; French uses `/fr` and `https://stream.radiotedu.com/fr`. The source credential shared during development must be rotated before production and must never enter the repository or logs.
+English uses `/ai` and `https://stream.radiotedu.com/ai`; French uses `/event` and `https://stream.radiotedu.com/event`. The source credential shared during development must be rotated before production and must never enter the repository or logs.
 
 Generate station-local Liquidsoap files from the station profiles:
 
@@ -375,7 +375,7 @@ PY
 
 The installed native Windows Liquidsoap build must support FFmpeg encoding. Missing FFmpeg support is a hard preflight failure; do not fall back to MP3. The rendered encoder is `%ffmpeg(format="adts", %audio(codec="aac", b="192k", ac=2, ar=48000))` with `public=true` and source username `source`.
 
-The website server renders signed snapshots at `/ai`, `/ai/en`, and `/ai/fr` without exposing the broadcast computer, local file paths, logs, or admin controls. English and French players use the fixed public `/en` and `/fr` stream URLs above.
+The website server renders signed snapshots at `/ai`, `/ai/en`, and `/ai/fr` without exposing the broadcast computer, local file paths, logs, or admin controls. English and French players use the fixed public `/ai` and `/event` stream URLs above.
 
 The admin `Air Output` panel also has `Verify Icecast Air`, which renders the Liquidsoap config, confirms the queue file is readable, checks that the script references the queue, and probes the configured Icecast mount. It reports the real mount state; it does not claim the stream is live when Icecast/Liquidsoap are missing.
 

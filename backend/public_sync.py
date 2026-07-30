@@ -48,7 +48,7 @@ def snapshot_state_from_operator_status(station_id: str, status: dict) -> dict:
 
     if station_id not in STATIONS:
         raise ValueError("unsupported station")
-    mount = "/en" if station_id.endswith("-en") else "/fr"
+    mount = "/ai" if station_id.endswith("-en") else "/event"
     now = status.get("now_playing") if isinstance(status.get("now_playing"), dict) else {}
     source_kind = str(now.get("type") or "unknown").casefold()
     if source_kind in {"track", "music"}:

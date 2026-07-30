@@ -8,7 +8,7 @@ queue_path = getenv(default="data/liquidsoap/queue.m3u", "LIQUIDSOAP_QUEUE_PATH"
 host = getenv(default="10.98.98.75", "ICECAST_HOST")
 port = int_of_string(getenv(default="11154", "ICECAST_PORT"))
 password = getenv(default="", "ICECAST_PASSWORD")
-mount = getenv(default="/en", "ICECAST_MOUNT")
+mount = getenv(default="/ai", "ICECAST_MOUNT")
 
 radio = playlist(id="RadioTEDU", mode="normal", reload=1, reload_mode="watch", queue_path)
 radio = mksafe(radio)
