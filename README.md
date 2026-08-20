@@ -410,3 +410,39 @@ For trusted remote operators, set `ADMIN_API_TOKEN` on the broadcast server and 
 ## Observability
 
 The dashboard includes Runtime Watch: announcement prebuffer readiness, uptime, generated clips, recent errors, restart count, and current playback state. These values come from real SQLite/runtime state, not invented analytics.
+
+## Technical architecture
+
+RTAI Radio is a local-first broadcast stack. The Electron shell presents the
+React operator interface, the Python backend owns schedule and automation state,
+and Liquidsoap performs continuous playout into Icecast. Local AI services can
+prepare speech and editorial material, but the deterministic rundown remains the
+authority for what is played.
+
+```mermaid
+flowchart TB
+    Operator["Operator"] --> Desktop["Electron desktop shell\ndesktop/main.cjs"]
+    Desktop --> UI["React control surface\nfrontend/src/"]
+    UI -->|"HTTP / events"| Backend["Python automation backend\nbackend/app.py"]
+    Backend --> State["SQLite and runtime state"]
+    Backend --> Rundown["Schedules · clocks · durable rundown"]
+    AI["Local AI services\nQwen TTS · search · weather · RSS"] --> Backend
+    Rundown --> Liquidsoap["Liquidsoap playout"]
+    Backend --> Liquidsoap
+    Library["Local music and generated clips"] --> Liquidsoap
+    Liquidsoap --> Icecast["Icecast streams"]
+    Backend --> Public["Public dashboard and metadata sync"]
+```
+
+| Layer | Responsibility | Important paths |
+| --- | --- | --- |
+| Operator application | Desktop lifecycle, navigation and station controls | `desktop/`, `frontend/` |
+| Automation authority | APIs, scheduling, rundown, metadata and integrations | `backend/` |
+| Playout | Continuous audio graph, fallback handling and Icecast output | `liquidsoap/`, `config/` |
+| Local AI | TTS, orchestration and optional enrichment without cloud dependency | `backend/`, `scripts/`, AI requirement sets |
+| Delivery and packaging | Website build, Windows bundle and deployment handoff | `packaging/`, `handoff/`, `docs/` |
+
+The principal failure boundary is between automation and playout: generated or
+network-derived content may fail without stopping the Liquidsoap fallback chain.
+Credentials, databases, generated audio, and licensed music remain deployment
+data and are not expected to be committed.
