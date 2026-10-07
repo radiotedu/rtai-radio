@@ -1,3 +1,9 @@
+## Current broadcast PC runtime — 7 October 2026
+
+The current EN/FR service implementation uses local Laya 0.3.22 for genuine next-song decisions, a four-song rolling music queue, Qwen3 0.6B for host text and Kokoro 82M for speech. English links are scheduled after every song. The full eligible catalog is encoder-ranked, with 64 finalists receiving actual typed-head probabilities. Production source-clock reporting and durable evidence delivery are independent of rendering.
+
+See [broadcast PC runtime](docs/broadcast-pc-runtime.md) for setup and implementation details, [the service integration](https://github.com/radiotedu/services-companion) for Windows deployment, and [the current web/API repair handoff](docs/radiotedu-web-api-fix-20261007.md) for the remaining HTTP 422 selection validator and origin listener continuity issues. Successful preparation is not proof of uninterrupted listener reception. This current runtime section supersedes older TTS/selection examples below.
+
 <p align="center">
   <img src="frontend/public/brand/rtai-logo.png" width="360" alt="RTAI logo">
 </p>
