@@ -682,10 +682,25 @@ def build_decoder_command(config: SupervisorConfig, playlist: Path) -> list[str]
 
 def build_track_decoder_command(config: SupervisorConfig, track: Path) -> list[str]:
     """Decode one heterogeneous source at a time into the shared PCM timeline."""
+    # Kokoro's short links have isolated consonant peaks. The music-oriented
+    # peak normalizer left real host speech near -23 LUFS while music played
+    # substantially louder. Normalize validated ephemeral host WAVs as speech;
+    # preserve the existing music processing and its prepared PCM cache keys.
+    host_root = config.state_file.parent / "host-queue"
+    is_host = (
+        track.parent.parent == host_root
+        and track.name.startswith("host-")
+        and track.suffix.lower() == ".wav"
+    )
+    audio_filter = (
+        "loudnorm=I=-16:TP=-1.5:LRA=7:linear=false,alimiter=limit=0.891251"
+        if is_host
+        else "dynaudnorm=f=500:g=15,alimiter=limit=0.891251"
+    )
     return [
         str(config.ffmpeg), "-hide_banner", "-nostdin", "-loglevel", "warning",
         "-i", str(track), "-vn", "-map_metadata", "-1", "-ac", "2",
-        "-ar", "48000", "-af", "dynaudnorm=f=500:g=15,alimiter=limit=0.891251",
+        "-ar", "48000", "-af", audio_filter,
         "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1",
     ]
 def _ffmpeg_creationflags() -> int:
@@ -3518,6 +3533,29 @@ class QualitySupervisor:
                                     spoken_transcript = normalize_tts_text(
                                         normalize_station_name(announcement_text)
                                     )
+                                    def record_host_completion(
+                                        aired: AirSegment,
+                                        transcript: str = spoken_transcript,
+                                    ) -> None:
+                                        # Prepared/rendered audio is not on-air proof.
+                                        # Record completion only after the primary
+                                        # source clock has sent this speech span.
+                                        self.status.update(
+                                            station.station_id,
+                                            "legacy",
+                                            announcement_playout={
+                                                "state": "source-completed",
+                                                "clock": "sent-mp3-frame-samples",
+                                                "started_at": aired.started_at.isoformat(),
+                                                "completed_at": aired.completed_at.isoformat(),
+                                                "duration_ms": aired.duration_ms,
+                                                "transcript": transcript,
+                                                "speech_processing": "host-loudnorm-minus16-v1",
+                                            },
+                                        )
+                                    workers[0].playout_clock.on_complete(
+                                        host_span, record_host_completion,
+                                    )
                                     public_sync.record_spoken_on_air(
                                         workers[0].playout_clock, host_span,
                                         station_id=station.station_id,
@@ -3599,15 +3637,19 @@ class QualitySupervisor:
                                         sound_tags=["warm"],
                                     )
                             except Exception as exc:
-                                if transition_library is None:
-                                    raise
-                                # A damaged optional liner must never interrupt
-                                # the PCM timeline. Continue directly into music.
+                                # A failed host decoder must not disconnect the
+                                # healthy music source. Expose the failure and
+                                # advance directly to the next selected song.
                                 self.status.update(
                                     station.station_id,
                                     "legacy",
                                     transition_liner_error=str(exc)[:240],
                                     transition_liner_failed=host_clip.name,
+                                    announcement_playout={
+                                        "state": "decode-failed",
+                                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                                        "error": str(exc)[:240],
+                                    },
                                 )
                             finally:
                                 if host_queue is not None:
