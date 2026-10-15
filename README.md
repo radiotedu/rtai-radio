@@ -454,3 +454,8 @@ The principal failure boundary is between automation and playout: generated or
 network-derived content may fail without stopping the Liquidsoap fallback chain.
 Credentials, databases, generated audio, and licensed music remain deployment
 data and are not expected to be committed.
+
+
+## AI catalog admission — 2026-10-15
+
+See [v2026.10.15-laya](docs/releases/2026.10.15-laya.md) for the optional media admission cache, AI catalog staging tool and [public factual catalog](docs/catalogs/2026-10-15-ai-generated.json). The Laya model pin and genuine single-choice evidence schema are preserved.

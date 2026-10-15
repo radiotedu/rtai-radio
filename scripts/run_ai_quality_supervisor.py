@@ -25,6 +25,7 @@ from typing import BinaryIO, Callable
 from zoneinfo import ZoneInfo
 
 from mutagen import File as MutagenFile
+from audio_admission_cache import admitted_audio
 from metadata_cleanup import clean_track_metadata
 from selection_outbox_store import SelectionOutboxStore
 from audio_prefetch import PcmPrefetch
@@ -265,6 +266,11 @@ def fallback_track_metadata(path: Path) -> tuple[str, str | None]:
 
 def track_metadata(path: Path) -> tuple[str, str | None]:
     """Return broadcast-safe title and artist without rewriting the media file."""
+    admitted = admitted_audio(path)
+    if admitted is not None:
+        title, artist = clean_track_metadata(str(admitted["title"]), str(admitted["artist"]))
+        if title and artist and broadcast_metadata_is_safe(title, artist):
+            return title[:200], artist[:160]
     try:
         media = MutagenFile(path, easy=True)
         tags = media.tags if media is not None else None

@@ -23,6 +23,11 @@ from typing import BinaryIO, Callable
 from mutagen import File as MutagenFile
 
 try:
+    from .audio_admission_cache import admitted_audio
+except ImportError:
+    from audio_admission_cache import admitted_audio
+
+try:
     from .metadata_cleanup import clean_track_metadata
 except ImportError:
     from metadata_cleanup import clean_track_metadata
@@ -614,8 +619,12 @@ def discover_audio(station: StationConfig) -> list[Path]:
         duration_limited: list[Path] = []
         for item in unique:
             try:
-                media = MutagenFile(item)
-                duration = float(media.info.length) if media is not None and media.info else 0.0
+                admitted = admitted_audio(item)
+                if admitted is not None:
+                    duration = float(admitted["duration_seconds"])
+                else:
+                    media = MutagenFile(item)
+                    duration = float(media.info.length) if media is not None and media.info else 0.0
             except (OSError, TypeError, ValueError, AttributeError):
                 duration = 0.0
             if 0 < duration <= station.max_track_seconds:

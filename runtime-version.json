@@ -1,5 +1,5 @@
 {
-  "runtime_version": "v2026.10.12-laya",
+  "runtime_version": "v2026.10.15-laya",
   "selector": "laya-live-next-track-v1",
   "laya_package_version": "0.3.22",
   "model_id": "convaiinnovations/laya-multilingual",
@@ -10,5 +10,7 @@
   "host_true_peak_db": -1.5,
   "tts_engine": "kokoro",
   "tts_model": "Kokoro-82M",
-  "source_sha256": "19a58dbf3273aeb9b59a18599951615fa76060fd3359b71bb6b4532eb6608ff0"
+  "source_sha256": "8d7f94d1d59670915242d8708e4131bb02cfe514ae7d2a060c78f8bb2602f54e",
+  "media_admission_cache": "verified-size-and-mtime-v1",
+  "ai_catalog_tracks": 1752
 }
